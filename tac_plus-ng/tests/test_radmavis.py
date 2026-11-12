@@ -1,11 +1,11 @@
-"""radmavis-mt: daemon A authenticates through external-mt against daemon B, a tac_plus-ng that answers RADIUS.
+"""radmavis-mt and radmavis: daemon A authenticates through external-mt or external against daemon B.
 
-The backend sends an Access-Request with PAP to B and maps the Class
-attribute of the Access-Accept to TACMEMBER ("group_attribute=Class").
-For the answers B does not give -- none at all, an Access-Challenge --
-a RADIUS responder of the test takes the place of B. The tests of a
-timeout and a challenge that must not open the fallback run with
-radmavis (one request at a time, module "external") as well.
+B is a tac_plus-ng that answers RADIUS. The backend sends an Access-Request
+with PAP to B and maps the Class attribute of the Access-Accept to
+TACMEMBER ("group_attribute=Class"). For the answers B does not give
+-- none at all, an Access-Challenge -- a RADIUS responder of the test
+takes the place of B. All tests run with radmavis (one request at a
+time, module "external") as well.
 
 A backend error opens the fallback of the realm ("authentication
 fallback period"): the fallback-only user rescue can log in. As
@@ -240,7 +240,7 @@ class RadiusServer(FailedLogin, RadmavisTestCase):
                 self.assertEqual((r.status_name, r.server_msg), ("PASS", motd), r)
 
     def test_access_accept_without_attributes(self):
-        """B adds no attribute for carol, and radcli keeps no Message-Authenticator: radmavis-mt gets no pairs.
+        """B adds no attribute for carol, and radcli keeps no Message-Authenticator: the back-end gets no pairs.
 
         radcli drops the attributes that its dictionary does not have. A
         build of B without OpenSSL sends no Message-Authenticator at all.
@@ -265,10 +265,7 @@ class RadiusServer(FailedLogin, RadmavisTestCase):
             self.assertEqual(c.pap("rescue", "rescuepw").status_name, "PASS")
 
     def test_password_timeout_is_a_backend_error(self):
-        """The RADIUS server gets the Access-Request and never answers: the fallback opens.
-
-        radmavis answers MAVIS_TIMEOUT instead, which records no backend failure.
-        """
+        """The RADIUS server gets the Access-Request and never answers: the fallback opens."""
         r = self.responder()
         a = self.start_client(r.port)
         with a.connect(timeout=10.0) as c:
@@ -279,8 +276,8 @@ class RadiusServer(FailedLogin, RadmavisTestCase):
 
 
 @unittest.skipUnless(os.path.exists(RADMAVIS), "the build has no radmavis (radcli missing)")
-class Radmavis(FailedLogin, RadmavisTestCase):
-    """The same with radmavis, in "mavis module = external"."""
+class Radmavis(RadiusServer):
+    """The same tests with radmavis, in "mavis module = external"."""
 
     BACKEND = RADMAVIS
 
