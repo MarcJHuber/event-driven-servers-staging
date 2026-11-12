@@ -94,6 +94,8 @@ jobs:
       - run: ls build/*/tests-prefix/sbin/ldapmavis-mt build/*/tests-prefix/sbin/radmavis-mt build/*/tests-prefix/sbin/tac_plus
       - run: test -x /usr/sbin/slapd && perl -MNet::LDAP -MIO::Socket::SSL -e 1
       - run: build/*/tests-prefix/sbin/tac_plus-ng -v 2>&1 | grep /ARES
+      # the TLS tests skip in a build without OpenSSL
+      - run: build/*/tests-prefix/sbin/tac_plus-ng -v 2>&1 | grep /OpenSSL
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -126,6 +128,8 @@ jobs:
       - run: ls build/*/tests-prefix/sbin/ldapmavis-mt build/*/tests-prefix/sbin/radmavis-mt build/*/tests-prefix/sbin/tac_plus
       - run: test -x /usr/sbin/slapd && perl -MNet::LDAP -MIO::Socket::SSL -e 1 && /usr/bin/python3 -c 'import ldap3'
       - run: build/*/tests-prefix/sbin/tac_plus-ng -v 2>&1 | grep /ARES
+      # the TLS tests skip in a build without OpenSSL
+      - run: build/*/tests-prefix/sbin/tac_plus-ng -v 2>&1 | grep /OpenSSL
       - if: failure()
         run: mkdir -p build/tests-work && sudo journalctl --no-pager -t tac_plus-ng > build/tests-work/journal.txt || true
       - if: failure()
@@ -168,6 +172,8 @@ jobs:
       - name: wait for the DC
         run: until [ -f build/samba-dc.rc ]; do sleep 1; done; cat build/samba-dc.log; [ "$(cat build/samba-dc.rc)" = 0 ] && cat build/samba-dc.env >> "$GITHUB_ENV"
       - run: TACTEST_PREFIX=$(echo "$PWD"/build/*/tests-prefix) tac_plus-ng/tests/run-tests
+      # the TLS tests skip in a build without OpenSSL
+      - run: build/*/tests-prefix/sbin/tac_plus-ng -v 2>&1 | grep /OpenSSL
       - if: failure()
         run: mkdir -p build/tests-work && sudo journalctl --no-pager -t tac_plus-ng > build/tests-work/journal.txt || true
       - if: failure()
