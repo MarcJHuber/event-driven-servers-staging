@@ -357,8 +357,13 @@ static int LDAP_init(LDAP **ldap, int *capabilities)
     // the TLS context takes the options above only when it is made
     i = 0;
     rc = ldap_set_option(*ldap, LDAP_OPT_X_TLS_NEWCTX, &i);
-    if (rc != LDAP_SUCCESS)
-	fprintf(stderr, "%d: %s\n", __LINE__, ldap_err2string(rc));
+    if (rc != LDAP_SUCCESS) {
+	// without a context of its own, libldap would use its global context
+	fprintf(stderr, "%d: TLS context: %s\n", __LINE__, ldap_err2string(rc));
+	ldap_unbind_ext_s(*ldap, NULL, NULL);
+	*ldap = NULL;
+	return rc;
+    }
 
     rc = LDAP_bind(*ldap, ldap_dn, ldap_pw);
     if (rc != LDAP_SUCCESS)

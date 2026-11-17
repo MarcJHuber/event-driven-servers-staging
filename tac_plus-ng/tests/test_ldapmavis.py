@@ -649,6 +649,17 @@ class LdapMt(LdapTests, DaemonTestCase):
                                   LDAP_OPT_X_TLS_PEERKEY_HASH=pin)
                 self.assertEqual(self.login(d), status)
 
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_tls_context_error(self):
+        """A TLS setting that libldap cannot load is a backend error: the global TLS context of libldap is not used."""
+        ca = self.ca()
+        # LDAPTLS_CACERT: the global TLS context of libldap trusts the server
+        _, d = self.start(tls=self.ldaps(ca), LDAPTLS_CACERT=ca.cert,
+                          LDAP_OPT_X_TLS_CACERTFILE=os.path.join(os.path.dirname(ca.cert), "no such ca.pem"))
+        self.assertEqual(self.login(d), "FAIL")
+        with d.connect() as c:
+            self.assertEqual(c.pap("rescue", "rescuepw").status_name, "PASS")
+
 
 @unittest.skipUnless(os.access(SLAPD, os.X_OK), "no OpenLDAP slapd")
 @unittest.skipUnless(perl_ldap(), "no Net::LDAP or IO::Socket::SSL for Perl")
