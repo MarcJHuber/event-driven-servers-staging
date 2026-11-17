@@ -855,6 +855,13 @@ class LdapMt(LdapTests, DaemonTestCase):
             self.assert_clear_text_warning(log, True)
 
     @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_ldaps_root_dse_after_bind(self):
+        """ldaps:// to a server that refuses the root DSE before a bind: TLS is in place, so the bind follows."""
+        ca = self.ca()
+        _, d = self.start(tls=self.ldaps(ca, "require authc\n"), LDAP_OPT_X_TLS_CACERTFILE=ca.cert)
+        self.assert_login(d, "PASS")
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
     def test_clear_text_warning(self):
         """A connection without TLS gives a warning on stderr before the bind; ldaps:// gives none."""
         log = self.capture_stderr("ldap")

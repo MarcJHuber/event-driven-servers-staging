@@ -211,12 +211,13 @@ static int LDAP_starttls(LDAP *ldap)
 {
     int offers = 0;
     int rc = LDAP_offers_starttls(ldap, &offers);
+    // ldaps://: a server can refuse the root DSE before a bind
+    if (ldap_tls_inplace(ldap))
+	return LDAP_SUCCESS;
     if (rc != LDAP_SUCCESS && !use_starttls && !ldap_skip_starttls) {
 	fprintf(stderr, "%d: root DSE: %s (set USE_STARTTLS=1 or LDAP_SKIP_STARTTLS=1)\n", __LINE__, ldap_err2string(rc));
 	return rc;
     }
-    if (ldap_tls_inplace(ldap))
-	return LDAP_SUCCESS;
     if (ldap_skip_starttls || !(offers || use_starttls)) {
 	fprintf(stderr, "%d: the connection to the LDAP server has no TLS: the binds send the passwords in clear text\n", __LINE__);
 	return LDAP_SUCCESS;
