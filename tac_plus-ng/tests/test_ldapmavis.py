@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 
 from tactest import DaemonTestCase, Stub, prefix, tls
 from tactest.daemon import free_port, sanitizer_env
@@ -183,9 +184,19 @@ def perl_ldap():
         return False
 
 
+def libldap():
+    """The libldap of ldapmavis-mt; ctypes.util.find_library needs the development files on some systems."""
+    try:
+        out = subprocess.run(["ldd", LDAPMAVIS], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False).stdout
+    except OSError:  # no ldd, e.g. on macOS
+        out = b""
+    m = re.search(rb"^\s*libldap\S*\s+=>\s+(/\S+)", out, re.M)
+    return m.group(1).decode() if m else ctypes.util.find_library("ldap")
+
+
 def libldap_tls_package():
     """The TLS library that libldap uses, for example "OpenSSL" or "GnuTLS"."""
-    name = ctypes.util.find_library("ldap")
+    name = libldap()
     if name is None:
         raise AssertionError("cannot find libldap")
     lib = ctypes.CDLL(name)
@@ -659,6 +670,15 @@ class LdapMt(LdapTests, DaemonTestCase):
         self.assertEqual(self.login(d), "FAIL")
         with d.connect() as c:
             self.assertEqual(c.pap("rescue", "rescuepw").status_name, "PASS")
+
+
+@unittest.skipUnless(os.path.exists(LDAPMAVIS), "the build has no ldapmavis-mt (OpenLDAP or pthreads missing)")
+@unittest.skipUnless(shutil.which("ldd"), "no ldd")
+class Libldap(unittest.TestCase):
+    def test_without_development_files(self):
+        """Without the development files of libldap, ctypes.util.find_library finds no libldap."""
+        with unittest.mock.patch("ctypes.util.find_library", return_value=None):
+            self.assertTrue(libldap_tls_package())
 
 
 @unittest.skipUnless(os.access(SLAPD, os.X_OK), "no OpenLDAP slapd")
