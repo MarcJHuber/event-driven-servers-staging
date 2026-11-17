@@ -275,6 +275,94 @@ class Slapd:
                 self.proc.wait()
 
 
+def ber(tag, *parts):
+    """A BER element with a definite length."""
+    body = b"".join(parts)
+    size = (len(body).bit_length() + 7) // 8
+    length = bytes([len(body)]) if len(body) < 0x80 else bytes([0x80 | size]) + len(body).to_bytes(size, "big")
+    return bytes([tag]) + length + body
+
+
+def ber_split(data):
+    """(tag, value, rest) of the first BER element of data, None while data holds only a part of it."""
+    if len(data) < 2:
+        return None
+    tag, size, start = data[0], data[1], 2
+    if size & 0x80:
+        start += size & 0x7F
+        if len(data) < start:
+            return None
+        size = int.from_bytes(data[2:start], "big")
+    return (tag, data[start:start + size], data[start + size:]) if len(data) >= start + size else None
+
+
+class StartTlsPeer:
+    """An LDAP peer on ldap:// that accepts StartTLS, fails the handshake, and keeps the connection open.
+
+    after_failure lists the operation tags that a client sent after the failed handshake (an unbind excepted).
+    """
+
+    SUCCESS = ber(0x0A, b"\0") + ber(0x04) + ber(0x04)
+    ROOT_DSE = ber(0x64, ber(0x04), ber(0x30, ber(0x30, ber(0x04, b"supportedExtension"),
+                                                  ber(0x31, ber(0x04, b"1.3.6.1.4.1.1466.20037")))))
+    TLS_ALERT = bytes.fromhex("15030300020228")  # fatal handshake_failure
+
+    def __init__(self):
+        self.sock = socket.create_server(("127.0.0.1", 0))
+        self.url = "ldap://127.0.0.1:%d" % self.sock.getsockname()[1]
+        self.after_failure = []
+        threading.Thread(target=self.accept, daemon=True).start()
+
+    def accept(self):
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.serve, args=(conn,), daemon=True).start()
+
+    def serve(self, conn):
+        data, failed = b"", False
+        with conn:
+            while True:
+                size = 5 + int.from_bytes(data[3:5], "big") if len(data) >= 5 else None
+                if data[:1] in (b"\x15", b"\x16") and size and len(data) >= size:
+                    # a TLS record: the ClientHello after the StartTLS response, or an alert of the client
+                    if data[:1] == b"\x16":
+                        conn.sendall(self.TLS_ALERT)
+                        failed = True
+                    data = data[size:]
+                    continue
+                if data[:1] not in (b"", b"\x15", b"\x16", b"\x30"):
+                    data = b""
+                element = ber_split(data) if data[:1] == b"\x30" else None
+                if element is None:
+                    try:
+                        chunk = conn.recv(65536)
+                    except OSError:
+                        return
+                    if not chunk:
+                        return
+                    data += chunk
+                    continue
+                _, message, data = element
+                _, msgid, op = ber_split(message)
+                msgid = ber(0x02, msgid)
+                if failed and op[0] != 0x42:
+                    self.after_failure.append(op[0])
+                if op[0] == 0x42:  # unbind
+                    return
+                if op[0] == 0x60:  # bind
+                    conn.sendall(ber(0x30, msgid, ber(0x61, self.SUCCESS)))
+                elif op[0] == 0x63:  # search
+                    conn.sendall(ber(0x30, msgid, self.ROOT_DSE) + ber(0x30, msgid, ber(0x65, self.SUCCESS)))
+                elif op[0] == 0x77:  # extended: StartTLS
+                    conn.sendall(ber(0x30, msgid, ber(0x78, self.SUCCESS, ber(0x8A, b"1.3.6.1.4.1.1466.20037"))))
+
+    def stop(self):
+        self.sock.close()
+
+
 # ldapmavis-mt skips the groupOfNames search while LDAP_NESTED_GROUP_DEPTH is unset
 MODULE = string.Template("""
 	mavis module = $module {
@@ -342,6 +430,22 @@ $module
 
 class LdapTests:
     """The tests for both back-ends; a subclass sets module(url, extra) to its "mavis module" block."""
+
+    def login(self, d):
+        with d.connect(timeout=15.0) as c:
+            return c.pap("alice", "alicepw").status_name
+
+    def test_failed_starttls_stops_the_connection(self):
+        """After a failed StartTLS the back-end does not use the connection again, also if the peer keeps it open."""
+        peer = StartTlsPeer()
+        self.addCleanup(peer.stop)
+        d = self.start_daemon(POLICY.substitute(module=self.module(peer.url, '\t\tsetenv USE_STARTTLS = "1"\n'),
+                                                staff=STAFF, base=BASE, last=WIDE - 1))
+        for _ in range(2):
+            self.assertEqual(self.login(d), "FAIL")
+            with d.connect() as c:
+                self.assertEqual(c.pap("rescue", "rescuepw").status_name, "PASS")
+        self.assertEqual(peer.after_failure, [])
 
     def slapd(self, ldif="", tls=""):
         """A running slapd; ldif: more entries, tls: TLS lines for slapd.conf."""
@@ -618,10 +722,6 @@ class LdapMt(LdapTests, DaemonTestCase):
     def ldaps(ca, more=""):
         return (f"TLSCACertificateFile {slapd_arg(ca.cert)}\nTLSCertificateFile {slapd_arg(ca.server[0])}\n"
                 f"TLSCertificateKeyFile {slapd_arg(ca.server[1])}\n{more}")
-
-    def login(self, d):
-        with d.connect(timeout=15.0) as c:
-            return c.pap("alice", "alicepw").status_name
 
     @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
     def test_tls_client_certificate(self):

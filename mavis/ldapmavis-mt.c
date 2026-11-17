@@ -390,8 +390,16 @@ static int LDAP_init(LDAP **ldap, int *capabilities)
 	    *capabilities = LDAP_eval_rootdse(*ldap, res);
 	ldap_msgfree(res);
     }
-    if (*capabilities & CAP_STARTTLS)
-	ldap_start_tls_s(*ldap, NULL, NULL);
+    if ((*capabilities & CAP_STARTTLS) && !ldap_tls_inplace(*ldap)) {
+	int tls_rc = ldap_start_tls_s(*ldap, NULL, NULL);
+	if (tls_rc != LDAP_SUCCESS) {
+	    // libldap removes TLS from the connection after a failed handshake
+	    fprintf(stderr, "%d: StartTLS: %s\n", __LINE__, ldap_err2string(tls_rc));
+	    ldap_unbind_ext_s(*ldap, NULL, NULL);
+	    *ldap = NULL;
+	    return tls_rc;
+	}
+    }
 
     if (rc != LDAP_SUCCESS)
 	fprintf(stderr, "%d: %s\n", __LINE__, ldap_err2string(rc));
