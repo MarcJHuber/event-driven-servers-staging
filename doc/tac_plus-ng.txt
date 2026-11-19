@@ -2,7 +2,7 @@ TACACS+ NG
 
 Marc Huber
 
-   $Id: 71d4d0a32bd4c96dd8476bb2db557f1b54ae7221 $
+   $Id: d4e8162f53afbf3ca3399975084d0b3a2b4a7545 $
      __________________________________________________________
 
    Table of Contents
@@ -769,8 +769,8 @@ n tested.
     #                     # "RFC5424" or "none", see the TIMESTAMP
     #                     # log variable for details.
     #
-    # buffer limit = 64000 # default upper limit for log buffer, use 0 to
- unlimit
+    # buffer limit = 64000 # default upper limit for log buffer, use 0 t
+o unlimit
     #
     # Logs may be filtered using a script:
     # filter = logfilter # pre-existing script
@@ -2977,8 +2977,11 @@ int async 1
    mavis_tacplus-ng_ldap.pl is an authentication/authorization
    back-end for the external module. It interfaces to various
    kinds of LDAP servers, e.g. OpenLDAP, Fedora DS and Active
-   Directory. The server type is detected automatically. Its
-   behaviour is controlled by a list of environmental variables:
+   Directory. The server type is detected automatically from the
+   root DSE. If the server does not give the root DSE to
+   LDAP_USER, the server type is generic and the back-end does not
+   change passwords on it. A message goes to stderr. Its behaviour
+   is controlled by a list of environmental variables:
 
            Variable        Description
    LDAP_HOSTS
