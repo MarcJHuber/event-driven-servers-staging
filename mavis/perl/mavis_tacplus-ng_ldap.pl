@@ -385,6 +385,7 @@ retry_once:
 			goto fatal;
 		}
 		unless (defined $LDAP_SERVER_TYPE) {
+			# before root_dse(): is_AD() reuses its cached root DSE, which has no supportedCapabilities
 			if ($ldap->is_AD() || $ldap->is_ADAM()) {
 				$LDAP_SERVER_TYPE = "microsoft";
 				$LDAP_FILTER = '(&(objectclass=user)(sAMAccountName=%s))' unless defined $LDAP_FILTER;
@@ -395,7 +396,10 @@ retry_once:
 				$LDAP_FILTER = '(&(objectclass=posixAccount)(uid=%s))' unless defined $LDAP_FILTER;
 			}
 		}
-		my $vendor = $ldap->root_dse->get_value('vendorname');
+		my $root_dse = $ldap->root_dse;
+		# the server can refuse the root DSE to LDAP_USER: the generic type, as in ldapmavis-mt
+		printf STDERR "no root DSE: the LDAP server type is generic\n" unless $root_dse;
+		my $vendor = $root_dse ? $root_dse->get_value('vendorname') : undef;
 		if (defined($vendor) && $vendor =~ /389 Project/ && $#LDAP_BIND < 0) {
 			printf STDERR "The 389 directory server will not return the memberOf attribute for anonymous binds. " .
 				      "Please set the LDAP_USER and LDAP_PASSWD environment variables.\n";
@@ -420,8 +424,8 @@ retry_once:
 		goto fatal;
 	}
 	unless (defined $has_extension_password_modify) {
-		$has_extension_password_modify =
-			$ldap->root_dse->supported_extension(LDAP_EXTENSION_PASSWORD_MODIFY);
+		my $root_dse = $ldap->root_dse;
+		$has_extension_password_modify = $root_dse ? $root_dse->supported_extension(LDAP_EXTENSION_PASSWORD_MODIFY) : 0;
 	}
 	debug_timer_start("ldap search");
 	$mesg = $ldap->search(base => $LDAP_BASE, filter => sprintf($LDAP_FILTER, escape_filter_value($V[AV_A_USER])), scope => $LDAP_SCOPE,

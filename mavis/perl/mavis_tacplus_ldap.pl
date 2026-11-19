@@ -547,8 +547,10 @@ while ($in = <>) {
 				}
 
 				unless (defined $has_extension_password_modify) {
+					my $root_dse = $ldap->root_dse;
+					# without the root DSE use the extension: the crypt() fallback keeps only 8 characters
 					$has_extension_password_modify =
-						$ldap->root_dse->supported_extension(LDAP_EXTENSION_PASSWORD_MODIFY);
+						$root_dse ? $root_dse->supported_extension(LDAP_EXTENSION_PASSWORD_MODIFY) : 1;
 				}
 
 				if (0 == $has_extension_password_modify) {
