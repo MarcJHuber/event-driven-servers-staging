@@ -2236,6 +2236,8 @@ static int udp_is_dtls(struct scm_data_udp *sd __attribute__((unused)), tac_real
 #ifdef WITH_SSL
     if (!tls_autodetect_on(r, sd->flags))
 	return sd->tls_versions != 0;
+    if (!r->dtls && !r->use_tls_psk)	// accept_control_check_tls_final() refuses DTLS here
+	return 0;
     return dtls_record_type(sd->tls_versions ? sd->tls_versions : dtls_autodetect_versions(r), sd->data, sd->data_len) != 0;
 #else
     return 0;

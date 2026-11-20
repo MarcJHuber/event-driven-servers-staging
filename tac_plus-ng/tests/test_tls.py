@@ -154,6 +154,16 @@ class TlsTestCase(DaemonTestCase):
         self.assertTrue(r.ok, r)
         return dict(a.split("=", 1) for a in r.args if a.startswith("tactest-"))
 
+    def assertDatagramsKeepTheConnection(self, body, datagrams):
+        """users_inc() at "last-recently-used limit" evicts the oldest context; a dropped datagram must not."""
+        d = self.start_daemon(body + "\tlast-recently-used limit = 1\n", udp=True, listen=self.LISTEN)
+        for name, datagram in datagrams:
+            with self.subTest(name):
+                c = self.connect(daemon=d)
+                c.pap("alice", "alicepw")   # the answer shows that the worker has the connection
+                self.radius("radsecret", daemon=d, listener="dtls", source="127.0.0.9").send_raw(datagram)
+                self.assertFalse(c.closed(timeout=2.0), "the datagram evicted the TACACS+ connection")
+
 
 class TacacsOverTls(TlsTestCase):
     LISTEN = {"tls": "tls = yes"}
@@ -697,18 +707,11 @@ class RadiusDtlsAutoDetect(RadiusOverDtls):
         self.assertEqual(c.access_request("alice", "alicepw", message_authenticator=True).code_name, "Access-Accept")
 
     def test_datagram_the_dtls_check_refuses_keeps_the_least_recently_used_connection(self):
-        """Only a record that accept_control_check_tls() takes for DTLS skips the RADIUS length check.
-
-        users_inc() at "last-recently-used limit" evicts the oldest context; a dropped datagram must not.
-        """
-        d = self.start_daemon(self.CONFIG + "\tlast-recently-used limit = 1\n", udp=True, listen=self.LISTEN)
-        for name, datagram in (("no DTLS version", b"\x16\xfe\x01" + bytes(17)),
-                               ("shorter than the header check", b"\x16\xfe\xfd\x00\x00")):
-            with self.subTest(name):
-                c = self.connect(daemon=d)
-                c.pap("alice", "alicepw")   # the answer shows that the worker has the connection
-                self.radius("radsecret", daemon=d, listener="dtls", source="127.0.0.9").send_raw(datagram)
-                self.assertFalse(c.closed(timeout=2.0), "the datagram evicted the TACACS+ connection")
+        """Only a record that accept_control_check_tls() takes for DTLS skips the RADIUS length check."""
+        self.assertDatagramsKeepTheConnection(self.CONFIG, (
+            ("handshake of no DTLS version", b"\x16\xfe\x01" + bytes(17)),
+            ("application data of no DTLS version", b"\x17\xfe\x01" + bytes(17)),
+            ("shorter than the header check", b"\x16\xfe\xfd\x00\x00")))
 
 
 class RadiusDtlsRealmAutoDetect(RadiusDtlsAutoDetect):
@@ -755,6 +758,17 @@ class RadiusOverDtlsPsk(TlsTestCase):
                                           "-cipher", self.CIPHER], timeout=10.0)
                 c = self.radius("radius/dtls", listener=listener, sock=sock, timeout=10.0)
                 self.assertEqual(c.access_request("alice", "alicepw").code_name, "Access-Accept")
+
+
+class DtlsAutoDetectWithoutContext(TlsTestCase):
+    """"tls = auto" in a realm without a certificate or a PSK: the worker cannot take DTLS."""
+
+    UDP = True
+    LISTEN = {"dtls": "protocol = UDP tls = auto"}
+    BODY = None
+
+    def test_dtls_record_keeps_the_least_recently_used_connection(self):
+        self.assertDatagramsKeepTheConnection(DEVICES + RADSEC, (("ClientHello record", b"\x16\xfe\xfd" + bytes(17)),))
 
 
 class PskRealmWithoutCertificate(TlsTestCase):
