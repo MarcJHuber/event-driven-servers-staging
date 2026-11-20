@@ -718,6 +718,45 @@ class RadiusDtlsRealmAutoDetect(RadiusDtlsAutoDetect):
     BODY = RadiusOverDtls.BODY + "\ttls auto-detect = yes\n"
 
 
+class RadiusDtlsListenerRealmAutoDetect(RadiusDtlsAutoDetect):
+    """"tls auto-detect = yes" in the realm also on a "tls = yes" UDP listener: plain RADIUS works there too."""
+
+    LISTEN = {"dtls": "protocol = UDP tls = yes"}
+    BODY = RadiusOverDtls.BODY + "\ttls auto-detect = yes\n"
+
+
+class RadiusDtlsRealmAutoDetectOff(RadiusOverDtls):
+    """"tls auto-detect = no" in the realm on a "tls = auto" UDP listener: the listener takes DTLS only."""
+
+    LISTEN = {"dtls": "protocol = UDP tls = auto"}
+    BODY = RadiusOverDtls.BODY + "\ttls auto-detect = no\n"
+
+
+class RadiusOverDtlsPsk(TlsTestCase):
+    """DTLS 1.2 with a pre-shared key in a realm without a certificate, through "openssl s_client -psk"."""
+
+    UDP = True
+    LISTEN = {"dtls": "protocol = UDP tls = yes tls psk = yes", "auto": "protocol = UDP tls = auto tls psk = yes"}
+    CIPHER = "PSK-AES128-GCM-SHA256"
+    BODY = PSK + DEVICES + RADSEC + '\ttls ciphers = "%s"\n' % CIPHER
+    CLIENTS = {}
+
+    @classmethod
+    def setUpClass(cls):
+        if not tls.dtls_client_available():
+            raise unittest.SkipTest("openssl s_client has no DTLS")
+        super().setUpClass()
+
+    def test_access_accept(self):
+        for listener in ("dtls", "auto"):
+            with self.subTest(listener=listener):
+                sock = tls.SClientSocket((self.daemon.address, self.daemon.ports[listener]),
+                                         ["-dtls1_2", "-timeout", "-psk_identity", "psknas", "-psk", PSK_KEY,
+                                          "-cipher", self.CIPHER], timeout=10.0)
+                c = self.radius("radius/dtls", listener=listener, sock=sock, timeout=10.0)
+                self.assertEqual(c.access_request("alice", "alicepw").code_name, "Access-Accept")
+
+
 class PskRealmWithoutCertificate(TlsTestCase):
     """"tls psk = yes" and no certificate: a handshake without a PSK has no SSL context and is refused."""
 

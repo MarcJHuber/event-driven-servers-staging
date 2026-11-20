@@ -1679,9 +1679,11 @@ static int tls_autodetect_on(tac_realm *r, u_int sd_flags)
     return r->tls_autodetect == TRISTATE_YES || (r->tls_autodetect == TRISTATE_DUNNO && (sd_flags & SCM_FLAG_TLSAUTO));
 }
 
-// the DTLS versions of auto-detection on a listener that names none
-static u_int dtls_autodetect_versions(void)
+// the DTLS versions of auto-detection on a listener that names none; none without a DTLS context
+static u_int dtls_autodetect_versions(tac_realm *r)
 {
+    if (!r->dtls)
+	return 0;
     u_int versions = DTLS1_VERSION & 0xff;
     versions <<= 8;
     versions |= DTLS1_2_VERSION & 0xff;
@@ -1766,8 +1768,8 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 	    ctx->tls_versions = TLS1_2_VERSION & 0xff;
 	    ctx->tls_versions <<= 8;
 	    ctx->tls_versions |= TLS1_3_VERSION & 0xff;
-	} else if (ctx->realm->dtls && sd_ext->sd.type == SCM_UDPDATA)
-	    ctx->tls_versions = dtls_autodetect_versions();
+	} else if (sd_ext->sd.type == SCM_UDPDATA)
+	    ctx->tls_versions = dtls_autodetect_versions(ctx->realm);
     }
     if (ctx->tls_versions && ctx->tls_autodetect != TRISTATE_YES) {
 	ctx->use_tls = (sd_ext->sd.type == SCM_ACCEPT) ? BISTATE_YES : BISTATE_NO;
@@ -2228,15 +2230,13 @@ static void accept_control_final(struct context *ctx)
     tac_read(ctx, ctx->sock);
 }
 
-// A DTLS record has no RADIUS length field: the DTLS listener, or the record check of TLS auto-detection, decides.
+// A DTLS record has no RADIUS length field: decide as accept_control_common() and accept_control_check_tls() do.
 static int udp_is_dtls(struct scm_data_udp *sd __attribute__((unused)), tac_realm *r __attribute__((unused)))
 {
 #ifdef WITH_SSL
-    if (sd->tls_versions && !(sd->flags & SCM_FLAG_TLSAUTO))
-	return -1;
-    if (!tls_autodetect_on(r, sd->flags) || !r->dtls)
-	return 0;
-    return dtls_record_type(sd->tls_versions ? sd->tls_versions : dtls_autodetect_versions(), sd->data, sd->data_len) != 0;
+    if (!tls_autodetect_on(r, sd->flags))
+	return sd->tls_versions != 0;
+    return dtls_record_type(sd->tls_versions ? sd->tls_versions : dtls_autodetect_versions(r), sd->data, sd->data_len) != 0;
 #else
     return 0;
 #endif
