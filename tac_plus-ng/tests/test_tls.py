@@ -718,6 +718,24 @@ class RadiusDtlsRealmAutoDetect(RadiusDtlsAutoDetect):
     BODY = RadiusOverDtls.BODY + "\ttls auto-detect = yes\n"
 
 
+class PskRealmWithoutCertificate(TlsTestCase):
+    """"tls psk = yes" and no certificate: a handshake without a PSK has no SSL context and is refused."""
+
+    UDP = True
+    LISTEN = {"tls": "tls = yes", "dtls": "protocol = UDP tls = yes"}
+    BODY = PSK + DEVICES + RADSEC
+    CLIENTS = {}
+
+    def test_tls_without_psk_is_refused(self):
+        self.assertRefused(lambda: self.connect_tls(client=None))
+
+    def test_dtls_without_psk_is_refused(self):
+        c = self.radius("radius/dtls", listener="dtls", timeout=2.0)
+        c.send_raw(b"\x16\xfe\xfd" + bytes(10))
+        with self.assertRaises(TimeoutError):
+            c.recv_raw()
+
+
 @unittest.skipUnless(LINUX, "CPU time from /proc")
 class PeerCloses(TlsTestCase):
     """PR 201, 203, 204: a connection the peer closed in the middle of a packet kept the worker busy.

@@ -2158,6 +2158,11 @@ static void accept_control_check_tls_final(struct context *ctx)
 		mem_free(ctx->mem, &ctx->inject_buf);
 	    }
 	}
+	if (!ctx->tls) {	// "tls psk = yes" without a certificate, and no PSK in the handshake
+	    report(NULL, LOG_ERR, ~0, "%s: no TLS context for realm %s", __func__, ctx->realm->name.txt);
+	    cleanup(ctx, ctx->sock);
+	    return;
+	}
 	accept_control_tls(ctx, ctx->sock);
 	return;
     }
