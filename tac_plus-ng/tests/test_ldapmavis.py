@@ -314,7 +314,8 @@ def ber_split(data):
 class StartTlsPeer:
     """An LDAP peer on ldap:// that accepts StartTLS, fails the handshake, and keeps the connection open.
 
-    after_failure lists the operation tags that a client sent after the failed handshake (an unbind excepted).
+    after_failure lists the operation tags that a client sent after the failed handshake (an unbind excepted),
+    hellos counts the ClientHello records.
     """
 
     SUCCESS = ber(0x0A, b"\0") + ber(0x04) + ber(0x04)
@@ -326,6 +327,7 @@ class StartTlsPeer:
         self.sock = socket.create_server(("127.0.0.1", 0))
         self.url = "ldap://127.0.0.1:%d" % self.sock.getsockname()[1]
         self.after_failure = []
+        self.hellos = 0
         threading.Thread(target=self.accept, daemon=True).start()
 
     def accept(self):
@@ -344,6 +346,7 @@ class StartTlsPeer:
                 if data[:1] in (b"\x15", b"\x16") and size and len(data) >= size:
                     # a TLS record: the ClientHello after the StartTLS response, or an alert of the client
                     if data[:1] == b"\x16":
+                        self.hellos += 1
                         conn.sendall(self.TLS_ALERT)
                         failed = True
                     data = data[size:]
@@ -460,6 +463,8 @@ class LdapTests:
             self.assertEqual(self.login(d), "FAIL")
             with d.connect() as c:
                 self.assertEqual(c.pap("rescue", "rescuepw").status_name, "PASS")
+        # a new connection and handshake in each round: the logins failed in the handshake, not before it
+        self.assertGreaterEqual(peer.hellos, 2)
         self.assertEqual(peer.after_failure, [])
 
     def slapd(self, ldif="", tls=""):
