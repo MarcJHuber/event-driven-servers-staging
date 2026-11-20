@@ -200,6 +200,7 @@ def accepts_tls12(port):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.maximum_version = ssl.TLSVersion.TLSv1_2
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=5.0) as sock, ctx.wrap_socket(sock):
