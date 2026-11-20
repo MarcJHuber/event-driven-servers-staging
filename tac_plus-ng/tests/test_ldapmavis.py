@@ -18,6 +18,7 @@ import re
 import select
 import shutil
 import socket
+import ssl
 import string
 import struct
 import subprocess
@@ -192,6 +193,19 @@ def libldap():
         out = b""
     m = re.search(rb"^\s*libldap\S*\s+=>\s+(/\S+)", out, re.M)
     return m.group(1).decode() if m else ctypes.util.find_library("ldap")
+
+
+def accepts_tls12(port):
+    """True if the TLS server on 127.0.0.1:port completes a TLS 1.2 handshake."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5.0) as sock, ctx.wrap_socket(sock):
+            return True
+    except (ssl.SSLError, ConnectionResetError):  # an alert, or a reset without one
+        return False
 
 
 def libldap_tls_package():
@@ -742,8 +756,11 @@ class LdapMt(LdapTests, DaemonTestCase):
         for env, status in (({}, "PASS"), ({"LDAP_OPT_X_TLS_PROTOCOL_MAX": "0x303"}, "FAIL")):
             with self.subTest(env=env):
                 if env and libldap_tls_package() == "GnuTLS":
-                    self.skipTest("libldap with GnuTLS ignores LDAP_OPT_X_TLS_PROTOCOL_MAX and TLSProtocolMin")
-                _, d = self.start(tls=conf, LDAP_OPT_X_TLS_CACERTFILE=ca.cert, **env)
+                    self.skipTest("libldap with GnuTLS ignores LDAP_OPT_X_TLS_PROTOCOL_MAX")
+                slapd, d = self.start(tls=conf, LDAP_OPT_X_TLS_CACERTFILE=ca.cert, **env)
+                # TACTEST_PREFIX can give ldapmavis-mt another libldap than slapd
+                if env and accepts_tls12(slapd.port):
+                    self.skipTest("slapd accepts TLS 1.2: its libldap (GnuTLS) ignores TLSProtocolMin")
                 self.assertEqual(self.login(d), status)
 
     @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
