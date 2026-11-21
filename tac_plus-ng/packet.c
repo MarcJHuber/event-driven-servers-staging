@@ -1206,7 +1206,7 @@ static ssize_t write_ex(int fd, const void *buf, size_t count, enum io_status *s
     ssize_t len = Write(fd, buf, count);
     if (len == 0)
 	*status = io_status_close;
-    else if (len < -1) {
+    else if (len < 0) {
 	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    len = 0;
 	    *status = io_status_retry;
