@@ -381,6 +381,71 @@ class StartTlsPeer:
         self.sock.close()
 
 
+class AdPeer:
+    """An LDAP peer on ldap:// with the root DSE of Active Directory and a user alice without a uid attribute.
+
+    While down is set, the peer closes each new connection at once. The user search finds alice only with a
+    sAMAccountName filter; the bind takes the passwords readerpw and alicepw.
+    """
+
+    ROOT_DSE = ber(0x64, ber(0x04), ber(0x30, ber(0x30, ber(0x04, b"supportedCapabilities"),
+                                                  ber(0x31, ber(0x04, b"1.2.840.113556.1.4.800")))))
+    ALICE = ber(0x64, ber(0x04, b"cn=alice,cn=users," + BASE.encode()),
+                ber(0x30, ber(0x30, ber(0x04, b"sAMAccountName"), ber(0x31, ber(0x04, b"alice")))))
+
+    def __init__(self):
+        self.sock = socket.create_server(("127.0.0.1", 0))
+        self.url = "ldap://127.0.0.1:%d" % self.sock.getsockname()[1]
+        self.down = True
+        threading.Thread(target=self.accept, daemon=True).start()
+
+    def accept(self):
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            if self.down:
+                conn.close()
+            else:
+                threading.Thread(target=self.serve, args=(conn,), daemon=True).start()
+
+    def serve(self, conn):
+        data = b""
+        with conn:
+            while True:
+                element = ber_split(data)
+                if element is None:
+                    try:
+                        chunk = conn.recv(65536)
+                    except OSError:
+                        return
+                    if not chunk:
+                        return
+                    data += chunk
+                    continue
+                _, message, data = element
+                _, msgid, op = ber_split(message)
+                msgid = ber(0x02, msgid)
+                tag, value, _ = ber_split(op)
+                fields = []
+                while value and ber_split(value):
+                    _, field, value = ber_split(value)
+                    fields.append(field)
+                if tag == 0x42:  # unbind
+                    return
+                if tag == 0x60:  # bind: version, name, simple password
+                    code = b"\0" if fields[2] in (b"readerpw", b"alicepw") else b"\x31"
+                    conn.sendall(ber(0x30, msgid, ber(0x61, ber(0x0A, code), ber(0x04), ber(0x04))))
+                elif tag == 0x63:  # search: base, scope, deref, size, time, types only, filter, attributes
+                    entry = self.ROOT_DSE if not fields[0] else self.ALICE if b"sAMAccountName" in fields[6] else b""
+                    conn.sendall((ber(0x30, msgid, entry) if entry else b"") +
+                                 ber(0x30, msgid, ber(0x65, StartTlsPeer.SUCCESS)))
+
+    def stop(self):
+        self.sock.close()
+
+
 # ldapmavis-mt skips the groupOfNames search while LDAP_NESTED_GROUP_DEPTH is unset
 MODULE = string.Template("""
 	mavis module = $module {
@@ -730,6 +795,22 @@ class LdapMt(LdapTests, DaemonTestCase):
             with self.subTest(user=user), d.connect() as c:
                 r = c.ascii_login(user, user + "pw")
                 self.assertEqual((r.status_name, r.server_msg), ("PASS", "l3\n"), r)
+
+    def test_ad_filter_after_a_failed_start(self):
+        """The server is down at the start: the AD default filter comes with the first root DSE, LDAP_FILTER stays."""
+        for env, status in (("", "PASS"), ('\t\tsetenv LDAP_FILTER = "(uid=%s)"\n', "FAIL")):
+            with self.subTest(env=env):
+                peer = AdPeer()
+                self.addCleanup(peer.stop)
+                module = (f'\tmavis module = external-mt {{\n\t\tsetenv LDAP_HOSTS = "{peer.url}"\n'
+                          f'\t\tsetenv LDAP_BASE = "{BASE}"\n\t\tsetenv LDAP_USER = "{READER}"\n'
+                          f'\t\tsetenv LDAP_PASSWD = "readerpw"\n{env}\t\texec = "{LDAPMAVIS}" "ldapmavis-mt"\n\t}}\n')
+                # no authentication fallback: after the failed first login the daemon asks the backend again
+                d = self.start_daemon(module + "\tuser backend = mavis\n\tpap backend = mavis\n"
+                                               "\truleset { rule everyone { script { permit } } }\n")
+                self.assertEqual(self.login(d), "FAIL")
+                peer.down = False
+                self.assertEqual(self.login(d), status)
 
     def ca(self):
         """A CA with a server certificate for 127.0.0.1 and a client certificate."""
