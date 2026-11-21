@@ -167,7 +167,7 @@ void send_acct_reply(tac_session *session, u_char status, char *msg, char *data)
     memcpy(p, data, data_len);
 
     write_packet(session->ctx, pak);
-    cleanup_session(session);
+    cleanup_session(session, 1);
 }
 
 /* send an authorization reply packet */
@@ -265,7 +265,7 @@ static str_t msgid_ ## A = { .txt = B, .len = sizeof(B) - 1 }
 
     write_packet(session->ctx, pak);
 
-    cleanup_session(session);
+    cleanup_session(session, 1);
 }
 
 void send_author_reply_mfa(tac_session *session)
@@ -367,7 +367,7 @@ void send_authen_reply(tac_session *session, int status, char *msg, int msg_len,
     case TAC_PLUS_AUTHEN_STATUS_PASS:
     case TAC_PLUS_AUTHEN_STATUS_ERROR:
     case TAC_PLUS_AUTHEN_STATUS_FOLLOW:
-	cleanup_session(session);
+	cleanup_session(session, 1);
     }
 }
 
@@ -397,7 +397,7 @@ static void rad_send_reply(tac_session *session, u_char status)
 	*pp = (tac_pak *) pak;
 	io_set_o(session->ctx->io, session->ctx->sock);
     }
-    cleanup_session(session);
+    cleanup_session(session, 1);
 }
 
 void rad_send_authen_reply(tac_session *session, u_char status, char *msg)
@@ -913,7 +913,7 @@ void tac_read(struct context *ctx, int cur)
 
 	default:
 	    report(session, LOG_ERR, ~0, "%s: %s", ctx->device_addr_ascii.txt, msg);
-	    cleanup_session(session);
+	    cleanup_session(session, 0);
 	}
     } while (more_keys);
 
@@ -1191,7 +1191,7 @@ void rad_read(struct context *ctx, int cur)
 	       !ctx->udp)
 	    rad_send_error(session, RADIUS_V_ERROR_CAUSE_UNSUPPORTED_SERVICE);
 	else
-	    cleanup_session(session);
+	    cleanup_session(session, 0);
     }
 
     if (detached)
@@ -1303,7 +1303,7 @@ static tac_session *new_session(struct context *ctx, tac_pak_hdr *tac_hdr, rad_p
     return session;
 }
 
-void cleanup_session(tac_session *session)
+void cleanup_session(tac_session *session, int may_clean_ctx)
 {
     struct context *ctx = session->ctx;
     mavis_ctx *mcx = lookup_mcx(ctx->realm);
@@ -1330,7 +1330,7 @@ void cleanup_session(tac_session *session)
 	mavis_cancel(mcx, session);
     mem_destroy(session->mem);
     mem_free(ctx->mem, &session);
-    if ((ctx->host->cleanup_when_idle == TRISTATE_YES)
+    if (((ctx->host->cleanup_when_idle == TRISTATE_YES) && may_clean_ctx)
 	&& (!ctx->single_connection_flag || (die_when_idle && !RB_first(ctx->sessions) && !RB_first(ctx->shellctxcache)))) {
 	if (ctx->out || ctx->delayed)	// pending output
 	    ctx->dying = 1;
