@@ -708,7 +708,9 @@ struct context {
     tac_host *host;
     tac_pak *in;
     tac_pak *out;
+    tac_pak **out_tail;
     tac_pak *delayed;
+    tac_pak **delayed_tail;
     mem_t *mem;			/* memory pool */
     rb_tree_t *sessions;
     rb_tree_t *shellctxcache;
@@ -790,6 +792,8 @@ struct context {
     } __attribute__((__packed__));
     enum token mavis_result;
     enum token aaa_protocol;
+    u_int out_count;
+    u_int delayed_count;
     u_int id;
     u_int debug;
     u_long mavis_latency;

@@ -65,7 +65,7 @@
 
 static const char rcsid[] __attribute__((used)) = "$Id$";
 
-static void write_packet(struct context *, tac_pak *);
+static int write_packet(struct context *, tac_pak *);
 static tac_session *new_session(struct context *, tac_pak_hdr *, rad_pak_hdr *);
 
 static void md5_xor(tac_pak_hdr *hdr, char *key, int keylen)
@@ -321,7 +321,7 @@ void send_authen_error(tac_session *session, char *fmt, ...)
     send_authen_reply(session, TAC_PLUS_AUTHEN_STATUS_ERROR, msg, 0, NULL, 0, 0);
 }
 
-static void delay_packet(struct context *, tac_pak *, int);
+static int delay_packet(struct context *, tac_pak *, int);
 
 /* create and send an authentication reply packet from tacacs+ to a NAS */
 
@@ -357,9 +357,12 @@ void send_authen_reply(tac_session *session, int status, char *msg, int msg_len,
     else if (session->authen_data)
 	session->authfail_delay = session->authen_data->iterations;
 
-    if (session->authfail_delay && !(common_data.debug & DEBUG_TACTRACE_FLAG))
-	delay_packet(session->ctx, pak, session->authfail_delay);
-    else
+    if (session->authfail_delay && !(common_data.debug & DEBUG_TACTRACE_FLAG)) {
+	if (delay_packet(session->ctx, pak, session->authfail_delay)) {
+	    cleanup(session->ctx, session->ctx->sock);
+	    return;
+	}
+    } else
 	write_packet(session->ctx, pak);
 
     switch (status) {
@@ -455,28 +458,35 @@ static void write_delayed_packet(struct context *ctx, int cur __attribute__((unu
 	ctx->delayed->next = NULL;
 	write_packet(ctx, ctx->delayed);
 	ctx->delayed = p;
+	ctx->delayed_count--;
     }
     io_sched_del(ctx->io, ctx, (void *) write_delayed_packet);
     if (ctx->delayed)
 	io_sched_add(ctx->io, ctx, (void *) write_delayed_packet, ctx->delayed->delay_until - io_now.tv_sec, 0);
 }
 
-static void delay_packet(struct context *ctx, tac_pak *p, int delay)
+#define MAXIMUM_QUEUED_PACKETS 64
+static int delay_packet(struct context *ctx, tac_pak *p, int delay)
 {
     p->delay_until = io_now.tv_sec + delay;
 
-    tac_pak **pp;
-    for (pp = &ctx->delayed; *pp && (*pp)->delay_until < p->delay_until; pp = &(*pp)->next);
+    if (ctx->delayed_count)
+	(*(ctx->delayed_tail))->next = p;
+    else
+	ctx->delayed_tail = &ctx->delayed;
+    *ctx->delayed_tail = p;
 
-    p->next = *pp;
-    *pp = p;
+    if (ctx->delayed_count++ > MAXIMUM_QUEUED_PACKETS)
+	return -1;
 
     if (ctx->delayed == p)
 	io_sched_add(ctx->io, ctx, (void *) write_delayed_packet, delay, 0);
+
+    return 0;
 }
 
 /* write a packet to the wire, encrypting it */
-static void write_packet(struct context *ctx, tac_pak *p)
+static int write_packet(struct context *ctx, tac_pak *p)
 {
     p->pak.tac.flags |= ctx->flags;
 
@@ -494,11 +504,18 @@ static void write_packet(struct context *ctx, tac_pak *p)
     if (!ctx->unencrypted_flag && ctx->key)
 	md5_xor(&p->pak.tac, ctx->key->key, ctx->key->len);
 
-    tac_pak **pp;
-    for (pp = &ctx->out; *pp; pp = &(*pp)->next);
-    *pp = p;
+    if (ctx->out_count)
+	(*(ctx->out_tail))->next = p;
+    else
+	ctx->out_tail = &ctx->out;
+    *ctx->out_tail = p;
+
+    if (ctx->out_count++ > MAXIMUM_QUEUED_PACKETS)
+	return -1;
 
     io_set_o(ctx->io, ctx->sock);
+
+    return 0;
 }
 
 static int authen_pak_looks_bogus(struct context *ctx)
@@ -1241,6 +1258,7 @@ void tac_write(struct context *ctx, int cur)
 	    tac_pak *n = ctx->out->next;
 	    mem_free(ctx->mem, &ctx->out);
 	    ctx->out = n;
+	    ctx->out_count--;
 	}
     }
     io_clr_o(ctx->io, cur);
