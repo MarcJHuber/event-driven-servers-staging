@@ -17,6 +17,7 @@ $(OD):
 #	@perl "$^"
 
 $(OD)/token.h: $(BASE)/mavis/token.pl
+	@rm -f "$(BASE)/mavis/token.h" "$(BASE)/mavis/token.c"
 	@perl "$^" $(OD)
 
 env: $(OD)
