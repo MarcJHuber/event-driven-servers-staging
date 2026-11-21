@@ -206,8 +206,7 @@ class FailedLogin:
             self.assertEqual(c.pap("rescue", "rescuepw").status_name, "FAIL")
 
 
-@unittest.skipUnless(os.path.exists(RADMAVIS_MT), "the build has no radmavis-mt (radcli or pthreads missing)")
-class RadiusServer(FailedLogin, RadmavisTestCase):
+class RadiusTests(FailedLogin):
     """Each test starts B first, then A with a radcli configuration that points at the RADIUS port of B."""
 
     def start_pair(self, check_server=True, dictionary=RADCLI_DICTIONARY):
@@ -275,8 +274,14 @@ class RadiusServer(FailedLogin, RadmavisTestCase):
         self.assertGreater(r.requests, 0)
 
 
+# a subclass inherits the skip of its TestCase base, so the two backends share only a mixin
+@unittest.skipUnless(os.path.exists(RADMAVIS_MT), "the build has no radmavis-mt (radcli or pthreads missing)")
+class RadiusServer(RadiusTests, RadmavisTestCase):
+    """The tests with radmavis-mt, in "mavis module = external-mt"."""
+
+
 @unittest.skipUnless(os.path.exists(RADMAVIS), "the build has no radmavis (radcli missing)")
-class Radmavis(RadiusServer):
+class Radmavis(RadiusTests, RadmavisTestCase):
     """The same tests with radmavis, in "mavis module = external"."""
 
     BACKEND = RADMAVIS
