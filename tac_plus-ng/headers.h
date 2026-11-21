@@ -910,7 +910,7 @@ int rad_get_password(tac_session * session, char **val, size_t *val_len);
 void rad_udp_inject(struct context *);
 ssize_t recv_inject(struct context *ctx, void *buf, size_t len, int flags, enum io_status *status);
 
-void cleanup_session(tac_session *);
+void cleanup_session(tac_session *, int);
 struct log_item *parse_log_format(struct sym *, mem_t *);
 
 void mavis_lookup(tac_session *, void (*)(tac_session *), const char *const, enum pw_ix);
