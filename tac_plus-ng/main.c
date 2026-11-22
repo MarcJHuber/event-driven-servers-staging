@@ -1239,7 +1239,7 @@ static void accept_control_tls(struct context *ctx, int cur)
 				default:
 				    continue;
 				}
-				su_convert(&su, AF_INET);
+				su_convert(&su, AF_INET6);
 				struct in6_addr addr = { };
 				su_ptoh(&su, &addr);
 				if (by_address->tls_peer_cert_san_validation == TRISTATE_YES && memcmp(&addr, &ctx->device_addr, sizeof(addr)))
@@ -1288,7 +1288,30 @@ static void accept_control_tls(struct context *ctx, int cur)
 		if (!ctx->host)
 		    set_host_by_dn(ctx, (char *) ctx->tls_peer_cert_subject.txt, NULL);
 
-		// check for cn match:
+#if 0
+				su_convert(&su, AF_INET6);
+				struct in6_addr addr = { };
+				su_ptoh(&su, &addr);
+				if (by_address->tls_peer_cert_san_validation == TRISTATE_YES && memcmp(&addr, &ctx->device_addr, sizeof(addr)))
+				    continue;
+#endif
+		// check for cn match
+		sockaddr_union su = { 0 };
+		if (!ctx->host && !su_pton(&su, ctx->tls_peer_cn.txt)) {
+			su_convert(&su, AF_INET6);
+			struct in6_addr addr = { };
+			su_ptoh(&su, &addr);
+			if (by_address->tls_peer_cert_cn_validation == TRISTATE_YES && !memcmp(&addr, &ctx->device_addr, sizeof(addr))) {
+				radixtree_t *rxt = lookup_hosttree(ctx->realm);
+				if (rxt) {
+				    struct in6_addr agg_addr = addr;
+				    check_aggregate(ctx->realm, &agg_addr, S_device);
+				    tac_host *h = radix_lookup(rxt, &agg_addr, NULL);
+				    if (h)
+					ctx->host = h;
+				}
+			}
+		}
 		if (!ctx->host)
 		    set_host_by_cn(ctx, ctx->tls_peer_cn.txt, NULL);
 	    }
@@ -1379,6 +1402,7 @@ void complete_host(tac_host *h)
 	HS(target_realm, NULL);
 #ifdef WITH_SSL
 	HS(tls_peer_cert_san_validation, TRISTATE_DUNNO);
+	HS(tls_peer_cert_cn_validation, TRISTATE_DUNNO);
 #ifndef OPENSSL_NO_PSK
 	HS(tls_psk_id, NULL);
 	HS(tls_psk_key, NULL);
