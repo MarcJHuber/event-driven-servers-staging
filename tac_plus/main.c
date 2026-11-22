@@ -197,13 +197,13 @@ static void periodics_ctx(struct context *ctx, int cur __attribute__((unused)))
 	tac_session *s = RB_payload(rbn, tac_session *);
 	rbnext = RB_next(rbn);
 	if (s->timeout < io_now.tv_sec)
-	    cleanup_session(s);
+	    cleanup_session(s, 0);
 
     }
 
     tac_script_expire_exec_context(ctx);
 
-    if (ctx->cleanup_when_idle && !ctx->out && !ctx->delayed && !RB_first(ctx->sessions) && !RB_first(ctx->shellctxcache))
+    if (!ctx->out && !ctx->delayed && (ctx->dying || (ctx->cleanup_when_idle && !RB_first(ctx->sessions) && !RB_first(ctx->shellctxcache))))
 	cleanup(ctx, ctx->sock);
     else
 	io_sched_renew_proc(ctx->io, ctx, (void *) periodics_ctx);
@@ -315,7 +315,7 @@ void cleanup(struct context *ctx, int cur)
 
     for (t = RB_first(ctx->sessions); t; t = u) {
 	u = RB_next(t);
-	cleanup_session(RB_payload(t, tac_session *));
+	cleanup_session(RB_payload(t, tac_session *), 0);
     }
 
     if (ctx->sessions)
