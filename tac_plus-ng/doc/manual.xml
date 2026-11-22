@@ -2166,6 +2166,13 @@ tls psk key = 0123456789abcdef # hex</screen>
             </para>
             <para>This adds <emphasis>SNI</emphasis> to the server name list of the current realm. A TLS connection requesting <emphasis>SNI</emphasis> will automatically be mapped to that realm.</para>
           </listitem>
+          <listitem>
+            <para>
+              <literal>tls min version =</literal>
+              <emphasis>version</emphasis>
+            </para>
+            <para>This sets the minimum TLS version, either <literal>TLS1_3</literal> (this is the actual default or <literal>TLS1_2</literal></para>.
+          </listitem>
         </itemizedlist>
         <para>Example:</para>
         <screen xml:space="preserve">id = spawnd {

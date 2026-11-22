@@ -221,6 +221,7 @@ maintainer			S_maintainer
 mask				S_mask
 mavis				S_mavis
 max				S_max
+min				S_min
 max-attempts			S_maxattempts
 max-rounds			S_maxrounds
 member				S_member

@@ -490,6 +490,7 @@ struct realm {
     char *tls_psk_dhe_groups;
     char *tls_cafile;
     int tls_verify_depth;
+    int tls_min_version;
     struct sni_list *sni_list;
     u_char *alpn_vec;
     size_t alpn_vec_len;
