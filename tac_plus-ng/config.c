@@ -4751,6 +4751,7 @@ static void parse_net(struct sym *sym, tac_realm *r, tac_user *user, tac_net *pa
 	case S_permit:
 	case S_deny:
 	    net->res = sym->code;
+	    sym_get(sym);
 	    continue;
 	case S_address:
 	    sym_get(sym);
