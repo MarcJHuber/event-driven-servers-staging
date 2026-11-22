@@ -672,6 +672,13 @@ void sym_get(struct sym *sym)
 {
     if (sym->token_chain) {
 	struct token_list *token_list = sym->token_chain->list;
+	if (!token_list) { /* empty alias: pop the chain */
+	    struct token_chain *chain = sym->token_chain->next;
+	    free(sym->token_chain);
+	    sym->token_chain = chain;
+	    sym_get(sym);
+	    return;
+	}
 	strncpy(sym->buf, token_list->buf, sizeof(sym->buf));
 	sym->code = token_list->code;
 	report_cfg_error(LOG_DEBUG, DEBUG_PARSE_FLAG,
@@ -1141,6 +1148,7 @@ int parse_int(struct sym *sym)
     int r = sscanf(sym->buf, "%d%c", &i, &c);
     if (r == 2 && i == 0 && (c == 'x' || c == 'X'))
 	r = sscanf(sym->buf, "%x%c", &i, &c);
+    unsigned long long v = (unsigned) i;
     switch (r) {
     case 2:
 	switch (c) {
@@ -1148,15 +1156,17 @@ int parse_int(struct sym *sym)
 	    goto bye;
 	case 'g':
 	case 'G':
-	    i <<= 10;
+	    v <<= 10;
 	case 'm':
 	case 'M':
-	    i <<= 10;
+	    v <<= 10;
 	case 'k':
 	case 'K':
-	    i <<= 10;
+	    v <<= 10;
 	}
     case 1:
+	if (v > INT_MAX) parse_error(sym, "integer value too large");
+	i = (int) v;
 	sym_get(sym);
 	return i;
     default:
