@@ -214,14 +214,18 @@ class SingleConnectionMayClose(TacPlusTestCase):
         with self.connect() as c:
             self.assertEqual(c.pap("alice", "alicepw").status_name, "PASS")
 
-    def test_the_periodic_task_closes_idle_connections(self):
+    def test_the_periodic_task_closes_only_may_close_connections(self):
         """The periodic task of a connection runs 60 s after the connection opens.
 
         It ends the sessions that have timed out. With single-connection = no, a connection
         can have two sessions: the second has not timed out then. A single connection
         that the client asked for stays open after a reply, until the periodic task.
+        A connection of a host with may-close = no stays open.
         """
         no_single = self.start_daemon(self.CONFIG.replace("single-connection = yes", "single-connection = no"))
+        keep_open = self.start_daemon(self.CONFIG.replace("may-close = yes", "may-close = no"))
+        keep = self.connect(keep_open)
+        self.assertEqual(keep.pap("alice", "alicepw").status_name, "PASS")
         idle = self.connect(single_connect=True)
         self.assertEqual(idle.pap("alice", "alicepw").status_name, "PASS")
         self.assertFalse(idle.closed(timeout=1), "the single connection closes after the reply")
@@ -232,6 +236,8 @@ class SingleConnectionMayClose(TacPlusTestCase):
         self.assertTrue(c1.closed(timeout=35), "the connection stays open")
         self.assertTrue(c2.closed(timeout=35), "the connection with two sessions stays open")
         self.assertTrue(idle.closed(timeout=5), "the idle single connection stays open")
+        self.assertFalse(keep.closed(timeout=1), "the connection of the may-close = no host closes")
+        self.assertEqual(keep.pap("alice", "alicepw").status_name, "PASS")
 
 
 if __name__ == "__main__":
