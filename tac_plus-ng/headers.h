@@ -186,6 +186,8 @@ struct tls_psk_key {
 };
 #endif
 
+struct tac_profile;
+
 struct tac_host {
     TAC_NAME_ATTRIBUTES;
     u_int line;			/* configuration file line number */
@@ -229,6 +231,7 @@ struct tac_host {
     int max_rounds;		/* maximum number of packet exchanges */
     tac_realm *realm;
     struct mavis_action *action;
+    struct tac_profile *authz_if_authc_profile;
     char **user_messages;
     time_t password_expiry_warning;
     u_int bug_compatibility;

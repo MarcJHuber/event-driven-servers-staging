@@ -4002,8 +4002,21 @@ static void parse_host_attr(struct sym *sym, tac_realm *r, tac_host *host)
     case S_permit:
 	sym_get(sym);
 	parse(sym, S_ifauthenticated);
-	parse(sym, S_equal);
-	host->authz_if_authc = parse_tristate(sym);
+	switch(sym->code) {
+	case S_equal:
+	    sym_get(sym);
+	    host->authz_if_authc = parse_tristate(sym);
+	    break;
+	case S_profile:
+	    sym_get(sym);
+	    parse(sym, S_equal);
+	    host->authz_if_authc_profile = lookup_profile(sym->buf, r);
+	    if (!host->authz_if_authc_profile)
+		parse_error(sym, "Profile '%s' not found.", sym->buf);
+	    break;
+	default:
+	    parse_error_expect(sym, S_equal, S_profile, S_unknown);
+	}
 	return;
     case S_bug:
 	sym_get(sym);
