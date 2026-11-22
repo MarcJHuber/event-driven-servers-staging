@@ -1148,6 +1148,7 @@ int parse_int(struct sym *sym)
     int r = sscanf(sym->buf, "%d%c", &i, &c);
     if (r == 2 && i == 0 && (c == 'x' || c == 'X'))
 	r = sscanf(sym->buf, "%x%c", &i, &c);
+    unsigned long long v = (unsigned) i;
     switch (r) {
     case 2:
 	switch (c) {
@@ -1155,15 +1156,17 @@ int parse_int(struct sym *sym)
 	    goto bye;
 	case 'g':
 	case 'G':
-	    i <<= 10;
+	    v <<= 10;
 	case 'm':
 	case 'M':
-	    i <<= 10;
+	    v <<= 10;
 	case 'k':
 	case 'K':
-	    i <<= 10;
+	    v <<= 10;
 	}
     case 1:
+	if (v > INT_MAX) parse_error(sym, "integer value too large");
+	i = (int) v;
 	sym_get(sym);
 	return i;
     default:
