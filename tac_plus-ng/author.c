@@ -308,15 +308,21 @@ static void do_author(tac_session *session)
     }
 
     if (!session->user) {
-	if ((session->ctx->host->authz_if_authc == TRISTATE_YES) && session->author_data->authen_method != TAC_PLUS_AUTHEN_METH_TACACSPLUS
-	    && session->author_data->authen_type == TAC_PLUS_AUTHEN_TYPE_ASCII) {
-	    report(DEBAUTHZ, "user '%s' not found but authenticated locally, permitted by default", session->username.txt);
-	    send_author_reply(session, TAC_PLUS_AUTHOR_STATUS_PASS_ADD, session->message.txt, NULL, 0, NULL);
+	// Routers don't always tell the truth regarding authentication method and type, so don't
+	// rely on that data. Just check whether the arguments resemble a shell command.
+	if ((session->ctx->host->authz_if_authc == TRISTATE_YES) && session->author_data->is_shell) {
+	    if (session->ctx->host->authz_if_authc_profile) {
+		session->profile = session->ctx->host->authz_if_authc_profile;
+	    } else {
+	        report(DEBAUTHZ, "user '%s' not found but authenticated locally, permitted by default", session->username.txt);
+	        send_author_reply(session, TAC_PLUS_AUTHOR_STATUS_PASS_ADD, session->message.txt, NULL, 0, NULL);
+	        return;
+	    }
+	} else {
+	    report(DEBAUTHZ, "user '%s' not found, denied by default", session->username.txt);
+	    send_author_reply(session, TAC_PLUS_AUTHOR_STATUS_FAIL, session->message.txt, NULL, 0, NULL);
 	    return;
 	}
-	report(DEBAUTHZ, "user '%s' not found, denied by default", session->username.txt);
-	send_author_reply(session, TAC_PLUS_AUTHOR_STATUS_FAIL, session->message.txt, NULL, 0, NULL);
-	return;
     }
 
     if (session->user && session->user->passwd[PW_LOGIN] && session->user->passwd[PW_LOGIN]->type == S_error) {
@@ -324,7 +330,8 @@ static void do_author(tac_session *session)
 	return;
     }
 
-    session->debug |= session->user->debug;
+    if (session->user)
+	session->debug |= session->user->debug;
     if (session->profile)
 	session->debug |= session->profile->debug;
 
@@ -360,7 +367,7 @@ static void do_author(tac_session *session)
 	}
     }
 
-    if (session->authorized && session->user->avc && session->user->avc->arr[AV_A_RARGS]) {
+    if (session->authorized && session->user && session->user->avc && session->user->avc->arr[AV_A_RARGS]) {
 	char *a = session->user->avc->arr[AV_A_RARGS];
 	while (*a) {
 	    char *t = a;

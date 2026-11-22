@@ -4013,6 +4013,7 @@ static void parse_host_attr(struct sym *sym, tac_realm *r, tac_host *host)
 	    host->authz_if_authc_profile = lookup_profile(sym->buf, r);
 	    if (!host->authz_if_authc_profile)
 		parse_error(sym, "Profile '%s' not found.", sym->buf);
+	    sym_get(sym);
 	    break;
 	default:
 	    parse_error_expect(sym, S_equal, S_profile, S_unknown);
