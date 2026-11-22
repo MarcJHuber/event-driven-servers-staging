@@ -672,6 +672,13 @@ void sym_get(struct sym *sym)
 {
     if (sym->token_chain) {
 	struct token_list *token_list = sym->token_chain->list;
+	if (!token_list) { /* empty alias: pop the chain */
+	    struct token_chain *chain = sym->token_chain->next;
+	    free(sym->token_chain);
+	    sym->token_chain = chain;
+	    sym_get(sym);
+	    return;
+	}
 	strncpy(sym->buf, token_list->buf, sizeof(sym->buf));
 	sym->code = token_list->code;
 	report_cfg_error(LOG_DEBUG, DEBUG_PARSE_FLAG,
