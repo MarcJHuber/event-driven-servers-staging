@@ -759,7 +759,9 @@ $DEFS{'# DEV FILES NOT FOUND'} = join(" ", sort keys %NOT_FOUND ) if int keys %N
 
 my $content = "";
 foreach my $k (sort keys %DEFS) {
-	$content .= "$k=$DEFS{$k}\n";
+	my $val = $DEFS{$k};
+	$val =~ s/\#/\\#/g;
+	$content .= "$k=$val\n";
 }
 
 my $OUT;
