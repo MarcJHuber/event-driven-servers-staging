@@ -676,6 +676,7 @@ static tac_realm *new_realm(char *name, tac_realm *parent)
     r->tls_verify_depth = -1;
     r->tls_psk_key_exchange = S_unknown;
     //r->tls_ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
+    r->tls_min_version = TLS1_3_VERSION;
 #endif
 
     if (parent) {
@@ -2340,9 +2341,25 @@ void parse_decls_real(struct sym *sym, tac_realm *r)
 		parse(sym, S_equal);
 		r->tls_autodetect = parse_tristate(sym);
 		continue;
+	    case S_min:
+		sym_get(sym);
+		parse(sym, S_version);
+		parse(sym, S_equal);
+		switch (sym->code) {
+		case S_TLS1_2:
+		    r->tls_min_version = TLS1_2_VERSION;
+		    break;
+		case S_TLS1_3:
+		    r->tls_min_version = TLS1_3_VERSION;
+		    break;
+		default:
+		    parse_error_expect(sym, S_TLS1_2, S_TLS1_3, S_unknown);
+		}
+		sym_get(sym);
+		continue;
 	    default:
 		parse_error_expect(sym, S_cert_file, S_key_file, S_cafile, S_passphrase, S_ciphers, S_cipher_suites, S_peer,
-				   S_accept, S_verify_depth, S_alpn, S_autodetect, S_psk, S_sni, S_unknown);
+				   S_min, S_accept, S_verify_depth, S_alpn, S_autodetect, S_psk, S_sni, S_unknown);
 	    }
 	    continue;
 #endif
@@ -6690,6 +6707,8 @@ static int sni_cb(SSL *ssl, int *al __attribute__((unused)), void *arg __attribu
 static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 {
     SSL_CTX *ctx = SSL_CTX_new(dtls ? DTLS_server_method() : TLS_server_method());
+    if (!dtls)
+	SSL_CTX_set_min_proto_version(ctx, r->tls_min_version);
     if (!ctx) {
 	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_new", __func__, __LINE__);
 	return ctx;
