@@ -166,8 +166,10 @@ void send_acct_reply(tac_session *session, u_char status, char *msg, char *data)
     p += msg_len;
     memcpy(p, data, data_len);
 
-    write_packet(session->ctx, pak);
-    cleanup_session(session, 1);
+    if (write_packet(session->ctx, pak))
+	cleanup(session->ctx, session->ctx->sock);
+    else
+	cleanup_session(session, 1);
 }
 
 /* send an authorization reply packet */
@@ -263,9 +265,10 @@ static str_t msgid_ ## A = { .txt = B, .len = sizeof(B) - 1 }
 
     log_exec(session, session->ctx, S_authorization, io_now.tv_sec);
 
-    write_packet(session->ctx, pak);
-
-    cleanup_session(session, 1);
+    if (write_packet(session->ctx, pak))
+	cleanup(session->ctx, session->ctx->sock);
+    else
+	cleanup_session(session, 1);
 }
 
 void send_author_reply_mfa(tac_session *session)
@@ -362,8 +365,12 @@ void send_authen_reply(tac_session *session, int status, char *msg, int msg_len,
 	    cleanup(session->ctx, session->ctx->sock);
 	    return;
 	}
-    } else
-	write_packet(session->ctx, pak);
+    } else {
+	if (write_packet(session->ctx, pak)) {
+	    cleanup(session->ctx, session->ctx->sock);
+	    return;
+	}
+    }
 
     switch (status) {
     case TAC_PLUS_AUTHEN_STATUS_FAIL:
@@ -385,7 +392,9 @@ static void set_response_authenticator(tac_session *session, rad_pak_hdr *pak)
     md5v(pak->authenticator, MD5_LEN, iov, 4);
 }
 
-static void rad_send_reply(tac_session *session, u_char status)
+#define MAXIMUM_QUEUED_PACKETS 64
+
+static int rad_send_reply(tac_session *session, u_char status)
 {
     tac_pak *pak = new_rad_pak(session, status);
 
@@ -395,12 +404,20 @@ static void rad_send_reply(tac_session *session, u_char status)
     if (session->authfail_delay && !(common_data.debug & DEBUG_TACTRACE_FLAG) && session->ctx->udp)
 	delay_packet(session->ctx, (tac_pak *) pak, session->authfail_delay);
     else {
-	tac_pak **pp;
-	for (pp = &session->ctx->out; *pp; pp = &(*pp)->next);
-	*pp = (tac_pak *) pak;
+	if (session->ctx->out) {
+	    *session->ctx->out_tail = pak;
+	    session->ctx->out_tail = &pak->next;
+	} else {
+	    session->ctx->out = pak;
+	    session->ctx->out_tail = &pak->next;
+	}
+	if (session->ctx->out_count++ >= MAXIMUM_QUEUED_PACKETS)
+	    return -1;
+
 	io_set_o(session->ctx->io, session->ctx->sock);
     }
     cleanup_session(session, 1);
+    return 0;
 }
 
 void rad_send_authen_reply(tac_session *session, u_char status, char *msg)
@@ -417,12 +434,14 @@ void rad_send_authen_reply(tac_session *session, u_char status, char *msg)
 	    session->radius_data->data_len = data_len + 2 + msg_len;
 	}
     }
-    rad_send_reply(session, status);
+    if (rad_send_reply(session, status))
+	cleanup(session->ctx, session->ctx->sock);
 }
 
 void rad_send_acct_reply(tac_session *session)
 {
-    rad_send_reply(session, RADIUS_CODE_ACCOUNTING_RESPONSE);
+    if (rad_send_reply(session, RADIUS_CODE_ACCOUNTING_RESPONSE))
+	cleanup(session->ctx, session->ctx->sock);
 }
 
 void rad_send_error(tac_session *session, uint32_t cause)
@@ -447,7 +466,8 @@ void rad_send_error(tac_session *session, uint32_t cause)
 	memcpy(data, &cause, 4);
 	session->radius_data->data_len = data_len + 6;
     }
-    rad_send_reply(session, RADIUS_CODE_PROTOCOL_ERROR);
+    if (rad_send_reply(session, RADIUS_CODE_PROTOCOL_ERROR))
+	cleanup(session->ctx, session->ctx->sock);
 }
 
 
@@ -456,7 +476,10 @@ static void write_delayed_packet(struct context *ctx, int cur __attribute__((unu
     while (ctx->delayed && ctx->delayed->delay_until <= io_now.tv_sec) {
 	tac_pak *p = ctx->delayed->next;
 	ctx->delayed->next = NULL;
-	write_packet(ctx, ctx->delayed);
+	if (write_packet(ctx, ctx->delayed)) {
+	    cleanup(ctx, ctx->sock);
+	    return;
+	}
 	ctx->delayed = p;
 	ctx->delayed_count--;
     }
@@ -465,18 +488,17 @@ static void write_delayed_packet(struct context *ctx, int cur __attribute__((unu
 	io_sched_add(ctx->io, ctx, (void *) write_delayed_packet, ctx->delayed->delay_until - io_now.tv_sec, 0);
 }
 
-#define MAXIMUM_QUEUED_PACKETS 64
 static int delay_packet(struct context *ctx, tac_pak *p, int delay)
 {
     p->delay_until = io_now.tv_sec + delay;
 
-    if (ctx->delayed_count)
-	(*(ctx->delayed_tail))->next = p;
-    else
-	ctx->delayed_tail = &ctx->delayed;
-    *ctx->delayed_tail = p;
+    tac_pak **pp;
+    for (pp = &ctx->delayed; *pp && (*pp)->delay_until < p->delay_until; pp = &(*pp)->next);
 
-    if (ctx->delayed_count++ > MAXIMUM_QUEUED_PACKETS)
+    p->next = *pp;
+    *pp = p;
+
+    if (ctx->delayed_count++ >= MAXIMUM_QUEUED_PACKETS)
 	return -1;
 
     if (ctx->delayed == p)
@@ -504,13 +526,15 @@ static int write_packet(struct context *ctx, tac_pak *p)
     if (!ctx->unencrypted_flag && ctx->key)
 	md5_xor(&p->pak.tac, ctx->key->key, ctx->key->len);
 
-    if (ctx->out_count)
-	(*(ctx->out_tail))->next = p;
-    else
-	ctx->out_tail = &ctx->out;
-    *ctx->out_tail = p;
+    if (ctx->out) {
+	*ctx->out_tail = p;
+	ctx->out_tail = &p->next;
+    } else {
+	ctx->out = p;
+	ctx->out_tail = &p->next;
+    }
 
-    if (ctx->out_count++ > MAXIMUM_QUEUED_PACKETS)
+    if (ctx->out_count++ >= MAXIMUM_QUEUED_PACKETS)
 	return -1;
 
     io_set_o(ctx->io, ctx->sock);

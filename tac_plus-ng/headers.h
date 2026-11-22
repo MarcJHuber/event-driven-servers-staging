@@ -710,7 +710,6 @@ struct context {
     tac_pak *out;
     tac_pak **out_tail;
     tac_pak *delayed;
-    tac_pak **delayed_tail;
     mem_t *mem;			/* memory pool */
     rb_tree_t *sessions;
     rb_tree_t *shellctxcache;

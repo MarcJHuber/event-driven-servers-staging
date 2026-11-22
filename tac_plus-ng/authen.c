@@ -2290,7 +2290,7 @@ void authen(tac_session *session, tac_pak_hdr *hdr)
 	    t = tmp;
 	}
 	report_auth(session, t, hint_abort, S_deny);
-	cleanup_session(session, 1);
+	cleanup_session(session, 0);
 	return;
     } else {			/* hdr->seq_no != 1 */
 	username_required = 0;
@@ -2775,7 +2775,7 @@ void rad_authen(tac_session *session)
 	session->authfn(session);
 	return;
     }
-    cleanup_session(session, 1);
+    cleanup_session(session, 0);
 }
 
 #undef rd
