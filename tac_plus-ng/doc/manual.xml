@@ -2119,8 +2119,9 @@ mavis user filter = __internal__username_acl__ </screen>
             <para>You can choose whether to skip certificate validation (<literal>none</literal>), to check the fingerprint only (<literal>hash</literal>), to validate the full chain (<literal>cert</literal>) or to allow both of the latter (<literal>any</literal>, that's the default).</para>
           </listitem>
           <listitem>
+            <para><literal>tls.peer.cert.cn.validation = </literal>(<literal>yes</literal>|<literal>no</literal></para>
             <para><literal>tls.peer.cert.san.validation = </literal>(<literal>yes</literal>|<literal>no</literal></para>
-            <para>This option enables SAN IP validation. Defaults to <literal>no</literal>, but enabling it will skip device object selection based on the SAN IP if the latter doesn't equal the peer IP. Not sure whether there's a use case for this at all.</para>
+            <para>This options enable CN and SAN IP validation. Defaults to <literal>no</literal>, and enabling it will skip device object selection based on the SAN IP if the latter doesn't equal the device IP.</para>
           </listitem>
           <listitem>
             <para>
