@@ -307,6 +307,7 @@ my %DEFS;
 $DEFS{'DIRS'} = $DIRS unless $DIRS eq "";
 $DEFS{"DEF"} = "";
 $DEFS{"LD"} = "ld";
+$DEFS{"LDFLAGS"} = "";
 $DEFS{"BASE"} = $cwd;
 $DEFS{"BASE"} = $cwd;
 
@@ -474,6 +475,7 @@ if ($cctest =~ /clang/) {
 
 if (defined $DEFS{"CC_GCC"}) {
 	$DEFS{"CFLAGS"} = "-Wall -W -Wno-strict-prototypes -Wno-implicit-fallthrough";
+	$DEFS{"CFLAGS"} .= " -fstack-protector-strong -D_FORTIFY_SOURCE=3";
 	if (exists $DEFS{'ASAN'}) {
 		$DEFS{"CFLAGS"} .= " -g";
 		$DEFS{"CC"} .= " -fsanitize=address";
@@ -485,7 +487,8 @@ if (defined $DEFS{"CC_GCC"}) {
 	}
 	$DEFS{"CFLAGS_PIC"} = "-fPIC";
 	$DEFS{"LDOPT_R"} = "-Wl,-rpath,";
-	$DEFS{"LD_SHARED"} = "$DEFS{'CC'} -shared";
+	$DEFS{"LDFLAGS"} = "-Wl,-z,relro,-z,now";
+	$DEFS{"LD_SHARED"} = "$DEFS{'CC'} -shared $DEFS{'LDFLAGS'}";
 
 	$DEFS{"CFLAGS"} .= " -Werror -Wno-deprecated-declarations -Wno-unused-result" if exists $DEFS{'DEBUG'} || exists $DEFS{'GGDB'};
 }
