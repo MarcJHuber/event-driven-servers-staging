@@ -329,7 +329,7 @@ static void periodics_ctx(struct context *ctx, int cur __attribute__((unused)))
 	tac_session *s = RB_payload(rbn, tac_session *);
 	rbnext = RB_next(rbn);
 	if (s->session_timeout < io_now.tv_sec)
-	    cleanup_session(s);
+	    cleanup_session(s, 0);
     }
 
     tac_script_expire_exec_context(ctx);
@@ -460,7 +460,7 @@ static str_t msgid_ ## A = { .txt = B, .len = sizeof(B) - 1 }
 
     for (rb_node_t * u, *t = RB_first(ctx->sessions); t; t = u) {
 	u = RB_next(t);
-	cleanup_session(RB_payload(t, tac_session *));
+	cleanup_session(RB_payload(t, tac_session *), 0);
     }
 
     if (ctx->sessions)

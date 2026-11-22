@@ -1117,7 +1117,9 @@ static size_t ememcpy(char *dest, char *src, size_t n, size_t remaining)
 	    *dest++ = *src;
 	    res += 2;
 	    src++, n--;
-	} else if (is_print(src, remaining, &wlen)) {
+	} else if (is_print(src, n, &wlen)) {
+	    if (wlen > n)
+		break;
 	    while (wlen > 0) {
 		*dest = *src;
 		dest++, src++, wlen--, res++, n--;

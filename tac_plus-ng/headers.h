@@ -708,6 +708,7 @@ struct context {
     tac_host *host;
     tac_pak *in;
     tac_pak *out;
+    tac_pak **out_tail;
     tac_pak *delayed;
     mem_t *mem;			/* memory pool */
     rb_tree_t *sessions;
@@ -790,6 +791,8 @@ struct context {
     } __attribute__((__packed__));
     enum token mavis_result;
     enum token aaa_protocol;
+    u_int out_count;
+    u_int delayed_count;
     u_int id;
     u_int debug;
     u_long mavis_latency;
@@ -910,7 +913,7 @@ int rad_get_password(tac_session * session, char **val, size_t *val_len);
 void rad_udp_inject(struct context *);
 ssize_t recv_inject(struct context *ctx, void *buf, size_t len, int flags, enum io_status *status);
 
-void cleanup_session(tac_session *);
+void cleanup_session(tac_session *, int);
 struct log_item *parse_log_format(struct sym *, mem_t *);
 
 void mavis_lookup(tac_session *, void (*)(tac_session *), const char *const, enum pw_ix);

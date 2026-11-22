@@ -65,7 +65,7 @@
 
 static const char rcsid[] __attribute__((used)) = "$Id$";
 
-static void write_packet(struct context *, tac_pak *);
+static int write_packet(struct context *, tac_pak *);
 static tac_session *new_session(struct context *, tac_pak_hdr *, rad_pak_hdr *);
 
 static void md5_xor(tac_pak_hdr *hdr, char *key, int keylen)
@@ -166,8 +166,10 @@ void send_acct_reply(tac_session *session, u_char status, char *msg, char *data)
     p += msg_len;
     memcpy(p, data, data_len);
 
-    write_packet(session->ctx, pak);
-    cleanup_session(session);
+    if (write_packet(session->ctx, pak))
+	cleanup(session->ctx, session->ctx->sock);
+    else
+	cleanup_session(session, 1);
 }
 
 /* send an authorization reply packet */
@@ -263,9 +265,10 @@ static str_t msgid_ ## A = { .txt = B, .len = sizeof(B) - 1 }
 
     log_exec(session, session->ctx, S_authorization, io_now.tv_sec);
 
-    write_packet(session->ctx, pak);
-
-    cleanup_session(session);
+    if (write_packet(session->ctx, pak))
+	cleanup(session->ctx, session->ctx->sock);
+    else
+	cleanup_session(session, 1);
 }
 
 void send_author_reply_mfa(tac_session *session)
@@ -321,7 +324,7 @@ void send_authen_error(tac_session *session, char *fmt, ...)
     send_authen_reply(session, TAC_PLUS_AUTHEN_STATUS_ERROR, msg, 0, NULL, 0, 0);
 }
 
-static void delay_packet(struct context *, tac_pak *, int);
+static int delay_packet(struct context *, tac_pak *, int);
 
 /* create and send an authentication reply packet from tacacs+ to a NAS */
 
@@ -357,17 +360,24 @@ void send_authen_reply(tac_session *session, int status, char *msg, int msg_len,
     else if (session->authen_data)
 	session->authfail_delay = session->authen_data->iterations;
 
-    if (session->authfail_delay && !(common_data.debug & DEBUG_TACTRACE_FLAG))
-	delay_packet(session->ctx, pak, session->authfail_delay);
-    else
-	write_packet(session->ctx, pak);
+    if (session->authfail_delay && !(common_data.debug & DEBUG_TACTRACE_FLAG)) {
+	if (delay_packet(session->ctx, pak, session->authfail_delay)) {
+	    cleanup(session->ctx, session->ctx->sock);
+	    return;
+	}
+    } else {
+	if (write_packet(session->ctx, pak)) {
+	    cleanup(session->ctx, session->ctx->sock);
+	    return;
+	}
+    }
 
     switch (status) {
     case TAC_PLUS_AUTHEN_STATUS_FAIL:
     case TAC_PLUS_AUTHEN_STATUS_PASS:
     case TAC_PLUS_AUTHEN_STATUS_ERROR:
     case TAC_PLUS_AUTHEN_STATUS_FOLLOW:
-	cleanup_session(session);
+	cleanup_session(session, 1);
     }
 }
 
@@ -382,7 +392,9 @@ static void set_response_authenticator(tac_session *session, rad_pak_hdr *pak)
     md5v(pak->authenticator, MD5_LEN, iov, 4);
 }
 
-static void rad_send_reply(tac_session *session, u_char status)
+#define MAXIMUM_QUEUED_PACKETS 64
+
+static int rad_send_reply(tac_session *session, u_char status)
 {
     tac_pak *pak = new_rad_pak(session, status);
 
@@ -392,12 +404,20 @@ static void rad_send_reply(tac_session *session, u_char status)
     if (session->authfail_delay && !(common_data.debug & DEBUG_TACTRACE_FLAG) && session->ctx->udp)
 	delay_packet(session->ctx, (tac_pak *) pak, session->authfail_delay);
     else {
-	tac_pak **pp;
-	for (pp = &session->ctx->out; *pp; pp = &(*pp)->next);
-	*pp = (tac_pak *) pak;
+	if (session->ctx->out) {
+	    *session->ctx->out_tail = pak;
+	    session->ctx->out_tail = &pak->next;
+	} else {
+	    session->ctx->out = pak;
+	    session->ctx->out_tail = &pak->next;
+	}
+	if (session->ctx->out_count++ >= MAXIMUM_QUEUED_PACKETS)
+	    return -1;
+
 	io_set_o(session->ctx->io, session->ctx->sock);
     }
-    cleanup_session(session);
+    cleanup_session(session, 1);
+    return 0;
 }
 
 void rad_send_authen_reply(tac_session *session, u_char status, char *msg)
@@ -414,12 +434,14 @@ void rad_send_authen_reply(tac_session *session, u_char status, char *msg)
 	    session->radius_data->data_len = data_len + 2 + msg_len;
 	}
     }
-    rad_send_reply(session, status);
+    if (rad_send_reply(session, status))
+	cleanup(session->ctx, session->ctx->sock);
 }
 
 void rad_send_acct_reply(tac_session *session)
 {
-    rad_send_reply(session, RADIUS_CODE_ACCOUNTING_RESPONSE);
+    if (rad_send_reply(session, RADIUS_CODE_ACCOUNTING_RESPONSE))
+	cleanup(session->ctx, session->ctx->sock);
 }
 
 void rad_send_error(tac_session *session, uint32_t cause)
@@ -444,7 +466,8 @@ void rad_send_error(tac_session *session, uint32_t cause)
 	memcpy(data, &cause, 4);
 	session->radius_data->data_len = data_len + 6;
     }
-    rad_send_reply(session, RADIUS_CODE_PROTOCOL_ERROR);
+    if (rad_send_reply(session, RADIUS_CODE_PROTOCOL_ERROR))
+	cleanup(session->ctx, session->ctx->sock);
 }
 
 
@@ -453,15 +476,19 @@ static void write_delayed_packet(struct context *ctx, int cur __attribute__((unu
     while (ctx->delayed && ctx->delayed->delay_until <= io_now.tv_sec) {
 	tac_pak *p = ctx->delayed->next;
 	ctx->delayed->next = NULL;
-	write_packet(ctx, ctx->delayed);
+	if (write_packet(ctx, ctx->delayed)) {
+	    cleanup(ctx, ctx->sock);
+	    return;
+	}
 	ctx->delayed = p;
+	ctx->delayed_count--;
     }
     io_sched_del(ctx->io, ctx, (void *) write_delayed_packet);
     if (ctx->delayed)
 	io_sched_add(ctx->io, ctx, (void *) write_delayed_packet, ctx->delayed->delay_until - io_now.tv_sec, 0);
 }
 
-static void delay_packet(struct context *ctx, tac_pak *p, int delay)
+static int delay_packet(struct context *ctx, tac_pak *p, int delay)
 {
     p->delay_until = io_now.tv_sec + delay;
 
@@ -471,12 +498,17 @@ static void delay_packet(struct context *ctx, tac_pak *p, int delay)
     p->next = *pp;
     *pp = p;
 
+    if (ctx->delayed_count++ >= MAXIMUM_QUEUED_PACKETS)
+	return -1;
+
     if (ctx->delayed == p)
 	io_sched_add(ctx->io, ctx, (void *) write_delayed_packet, delay, 0);
+
+    return 0;
 }
 
 /* write a packet to the wire, encrypting it */
-static void write_packet(struct context *ctx, tac_pak *p)
+static int write_packet(struct context *ctx, tac_pak *p)
 {
     p->pak.tac.flags |= ctx->flags;
 
@@ -494,11 +526,20 @@ static void write_packet(struct context *ctx, tac_pak *p)
     if (!ctx->unencrypted_flag && ctx->key)
 	md5_xor(&p->pak.tac, ctx->key->key, ctx->key->len);
 
-    tac_pak **pp;
-    for (pp = &ctx->out; *pp; pp = &(*pp)->next);
-    *pp = p;
+    if (ctx->out) {
+	*ctx->out_tail = p;
+	ctx->out_tail = &p->next;
+    } else {
+	ctx->out = p;
+	ctx->out_tail = &p->next;
+    }
+
+    if (ctx->out_count++ >= MAXIMUM_QUEUED_PACKETS)
+	return -1;
 
     io_set_o(ctx->io, ctx->sock);
+
+    return 0;
 }
 
 static int authen_pak_looks_bogus(struct context *ctx)
@@ -913,7 +954,7 @@ void tac_read(struct context *ctx, int cur)
 
 	default:
 	    report(session, LOG_ERR, ~0, "%s: %s", ctx->device_addr_ascii.txt, msg);
-	    cleanup_session(session);
+	    cleanup_session(session, 0);
 	}
     } while (more_keys);
 
@@ -1191,7 +1232,7 @@ void rad_read(struct context *ctx, int cur)
 	       !ctx->udp)
 	    rad_send_error(session, RADIUS_V_ERROR_CAUSE_UNSUPPORTED_SERVICE);
 	else
-	    cleanup_session(session);
+	    cleanup_session(session, 0);
     }
 
     if (detached)
@@ -1206,7 +1247,7 @@ static ssize_t write_ex(int fd, const void *buf, size_t count, enum io_status *s
     ssize_t len = Write(fd, buf, count);
     if (len == 0)
 	*status = io_status_close;
-    else if (len < -1) {
+    else if (len < 0) {
 	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    len = 0;
 	    *status = io_status_retry;
@@ -1241,6 +1282,7 @@ void tac_write(struct context *ctx, int cur)
 	    tac_pak *n = ctx->out->next;
 	    mem_free(ctx->mem, &ctx->out);
 	    ctx->out = n;
+	    ctx->out_count--;
 	}
     }
     io_clr_o(ctx->io, cur);
@@ -1303,7 +1345,7 @@ static tac_session *new_session(struct context *ctx, tac_pak_hdr *tac_hdr, rad_p
     return session;
 }
 
-void cleanup_session(tac_session *session)
+void cleanup_session(tac_session *session, int may_clean_ctx)
 {
     struct context *ctx = session->ctx;
     mavis_ctx *mcx = lookup_mcx(ctx->realm);
@@ -1330,7 +1372,7 @@ void cleanup_session(tac_session *session)
 	mavis_cancel(mcx, session);
     mem_destroy(session->mem);
     mem_free(ctx->mem, &session);
-    if ((ctx->host->cleanup_when_idle == TRISTATE_YES)
+    if (((ctx->host->cleanup_when_idle == TRISTATE_YES) && may_clean_ctx)
 	&& (!ctx->single_connection_flag || (die_when_idle && !RB_first(ctx->sessions) && !RB_first(ctx->shellctxcache)))) {
 	if (ctx->out || ctx->delayed)	// pending output
 	    ctx->dying = 1;
