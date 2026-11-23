@@ -6731,6 +6731,21 @@ static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_set_cipher_list", __func__, __LINE__);
     }
     ssl_apply_options(ctx, r, use_tls_psk);
+
+    // FIXME: Add config option for this, or leave it hardcoded?
+    if (!SSL_CTX_set1_sigalgs_list(ctx,
+	"RSA+SHA256" //
+	":RSA+SHA384" //
+	":RSA+SHA512" //
+	":ECDSA+SHA256" //
+	":ECDSA+SHA384" //
+	":ECDSA+SHA512" //
+	":rsa_pss_rsae_sha256" //
+	":rsa_pss_rsae_sha384" //
+	":rsa_pss_rsae_sha512" //
+	))
+	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_set1_sigalgs_list", __func__, __LINE__);
+
     if (r->tls_pass) {
 	SSL_CTX_set_default_passwd_cb(ctx, ssl_pem_phrase_cb);
 	SSL_CTX_set_default_passwd_cb_userdata(ctx, r->tls_pass);
@@ -6788,6 +6803,10 @@ static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 #ifdef OPENSSL_IS_BORINGSSL
     SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
 #endif
+    // FIXME, or clarify -- ANSSI-TLS discourages max_fragment_length and recommends replacing it with record_size_limit,
+    // but the latter isn't supported by OpenSSL.
+    //
+    // SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_DISABLED);
     return ctx;
 }
 #endif
