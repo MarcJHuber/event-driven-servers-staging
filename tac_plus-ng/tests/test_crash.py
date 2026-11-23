@@ -36,7 +36,7 @@ tests rely on the crash detectors that run after every test
 import struct
 import unittest
 
-from tactest import DaemonTestCase, features, tacacs
+from tactest import DaemonTestCase, config, features, tacacs
 
 POLICY = """
 	user alice {
@@ -229,6 +229,24 @@ class Realm(DaemonTestCase):
     def test_issue149_default_realm_still_works(self):
         self.assertTrue(self.connect().pap("alice", "alicepw").ok)
         self.assertEqual(self.connect().pap("carol", "carolpw").status_name, "FAIL")
+
+
+class SilentUnknownDevice(DaemonTestCase):
+    """A TCP connection of no device that sends nothing: a TLS build waits for its first bytes.
+
+    periodics_ctx() ran 60 s later and read ctx->host, still NULL: SIGSEGV.
+    This test takes about 60 s; the interval is fixed in main.c.
+    """
+
+    CONFIG = POLICY
+    TEMPLATE = config.BASE.replace("address = 127.0.0.0/8", "address = 127.0.0.1/32")     # 127.0.0.77: no device
+
+    def test_closed_at_the_first_check(self):
+        known = self.connect(single_connect=True)
+        self.assertTrue(known.pap("alice", "alicepw").ok)
+        unknown = self.connect(source="127.0.0.77")
+        self.assertTrue(unknown.closed(timeout=75), "the connection of no device is still open")
+        self.assertTrue(known.pap("alice", "alicepw").ok, "the worker lost the connection of the device")
 
 
 if __name__ == "__main__":

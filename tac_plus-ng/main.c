@@ -307,6 +307,10 @@ static void periodics(struct context *ctx, int cur __attribute__((unused)))
 
 static void periodics_ctx(struct context *ctx, int cur __attribute__((unused)))
 {
+    if (!ctx->host) {		// no device after 60 s of the TLS check; accept_control_final() rejects it too
+	reject_conn(ctx, ctx->hint, __func__, __LINE__);
+	return;
+    }
     if (!ctx->out && !ctx->delayed) {
 	if ((ctx->udp == BISTATE_NO) && (ctx->host->tcp_timeout || ctx->dying) && (ctx->last_io + ctx->host->tcp_timeout < io_now.tv_sec)) {
 	    cleanup(ctx, ctx->sock);
