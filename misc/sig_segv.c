@@ -97,7 +97,6 @@ void catchsegv(int sig __attribute__((unused)))
     signal(SIGSEGV, SIG_DFL);
 
     if (coredumpdir) {
-	struct rlimit rlim;
 	char cdf[PATH_MAX];
 
 	snprintf(cdf, sizeof(cdf), "%s/core.%.8lx", coredumpdir, (u_long) time(NULL));
@@ -106,6 +105,7 @@ void catchsegv(int sig __attribute__((unused)))
 	UNUSED_RESULT(setegid(getgid()));
 
 #if 0
+	struct rlimit rlim;
 	if (getrlimit(RLIMIT_CORE, &rlim)) {
 	    logerr("getrlimit (%s:%d)", __FILE__, __LINE__);
 	    exit(EX_OSERR);
