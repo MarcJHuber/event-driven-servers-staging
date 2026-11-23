@@ -59,6 +59,8 @@ static int ldap_sizelimit = 100;
 static int ldap_skip_memberof = -1;
 static int ldap_skip_posixgroup = -1;
 static int ldap_skip_groupofnames = -1;
+static int use_starttls = 0;
+static int ldap_skip_starttls = 0;
 
 static void usage(void)
 {
@@ -69,6 +71,7 @@ Important environment variables and ther defaults:\n\
  LDAP_USER                     unset (LDAP bind user DN)\n\
  LDAP_PASSWD                   unset (LDAP bind user password)\n\
  LDAP_BASE                     unset (LDAP search base)\n\
+ USE_STARTTLS                  unset (set: StartTLS is mandatory, also if not offered)\n\
  LDAP_SIZELIMIT                100 (maximum number of LDAP search results)\n\
  LDAP_MEMBEROF_FILTER          unset (regex, please adjust if needed)\n\
  LDAP_MEMBEROF_REGEX           ^cn=([^,]+),.* (please adjust this)\n\
@@ -86,7 +89,8 @@ Leaving the ones below as-is is likely safe:\n\
  LDAP_NESTED_GROUP_DEPTH       unset (set to limit group membership lookup depth)\n\
  LDAP_SKIP_MEMBEROF            unset (0: don't skip memberOf lookups, 1: skip)\n\
  LDAP_SKIP_POSIXGROUP          unset (0: don't skip posixGroup lookups, 1: skip)\n\
- LDAP_SKIP_GROUPOFNAMES        unset (0: don't skip groupOfNames lookups, 1: skip)\n"
+ LDAP_SKIP_GROUPOFNAMES        unset (0: don't skip groupOfNames lookups, 1: skip)\n\
+ LDAP_SKIP_STARTTLS            unset (0: StartTLS if the server offers it, 1: skip, clear text)\n"
 #ifdef LDAP_OPT_X_TLS_PROTOCOL_TLS1_3
 	    " LDAP_TLS_PROTOCOL_MIN         TLS1_2 (TLS1_0, TLS1_1, TLS1_2, TLS1_3)\n"
 #else
@@ -112,6 +116,10 @@ Plese have a look at the \"ldap_set_option\" manual page for explanations on:\n\
  LDAP_OPT_X_TLS_REQUIRE_SAN\n\
  LDAP_OPT_X_TLS_PEERKEY_HASH\n\
 \n\
+The server certificate is checked (LDAP_OPT_X_TLS_REQUIRE_CERT defaults to\n\
+LDAP_OPT_X_TLS_DEMAND). Set LDAP_OPT_X_TLS_CACERTFILE to the CA of the server,\n\
+or LDAP_OPT_X_TLS_REQUIRE_CERT=LDAP_OPT_X_TLS_NEVER to turn the check off.\n\
+\n\
 Copyright (C) 2023 by Marc Huber <Marc.Huber@web.de>\n\
 ");
     exit(-1);
@@ -128,7 +136,6 @@ static int LDAP_eval_rootdse(LDAP *ldap, LDAPMessage *res)
 #define CAP_389DS 2
 #define CAP_PWMODIFY 4
 #define CAP_FASTBIND 8
-#define CAP_STARTTLS 16
     for (LDAPMessage * entry = ldap_first_entry(ldap, res); entry; entry = ldap_next_entry(ldap, entry)) {
 	/* Print the DN string of the object */
 	BerElement *be = NULL;
@@ -156,11 +163,8 @@ static int LDAP_eval_rootdse(LDAP *ldap, LDAPMessage *res)
 		struct berval **v = ldap_get_values_len(ldap, entry, attribute);
 		if (v) {
 		    for (int i = 0; v[i]; i++) {
-			if (!strcmp(v[i]->bv_val, LDAP_EXTENSION_PASSWORD_MODIFY)) {
+			if (!strcmp(v[i]->bv_val, LDAP_EXTENSION_PASSWORD_MODIFY))
 			    capabilities |= CAP_PWMODIFY;
-			} else if (!strcmp(v[i]->bv_val, LDAP_SERVER_START_TLS_OID)) {
-			    capabilities |= CAP_STARTTLS;
-			}
 		    }
 		    ldap_value_free_len(v);
 		}
@@ -185,6 +189,50 @@ static int LDAP_eval_rootdse(LDAP *ldap, LDAPMessage *res)
 
 static int LDAP_bind(LDAP *, const char *, const char *);
 
+// Reads the root DSE without a bind; this also opens the connection.
+static int LDAP_offers_starttls(LDAP *ldap, int *offers)
+{
+    char *attrs[] = { "supportedExtension", NULL };
+    LDAPMessage *res = NULL;
+    *offers = 0;
+    int rc = ldap_search_ext_s(ldap, "", LDAP_SCOPE_BASE, "(objectClass=*)", attrs, 0, NULL, NULL, NULL, 1, &res);
+    LDAPMessage *entry = (rc == LDAP_SUCCESS) ? ldap_first_entry(ldap, res) : NULL;
+    struct berval **v = entry ? ldap_get_values_len(ldap, entry, "supportedExtension") : NULL;
+    for (int i = 0; v && v[i]; i++)
+	if (!strcmp(v[i]->bv_val, LDAP_SERVER_START_TLS_OID))
+	    *offers = 1;
+    if (v)
+	ldap_value_free_len(v);
+    ldap_msgfree(res);
+    return rc;
+}
+
+static int LDAP_starttls(LDAP *ldap)
+{
+    int offers = 0;
+    int rc = LDAP_offers_starttls(ldap, &offers);
+    // ldaps://: a server can refuse the root DSE before a bind
+    if (ldap_tls_inplace(ldap))
+	return LDAP_SUCCESS;
+    if (rc != LDAP_SUCCESS && !use_starttls && !ldap_skip_starttls) {
+	fprintf(stderr, "%d: root DSE: %s (set USE_STARTTLS=1 or LDAP_SKIP_STARTTLS=1)\n", __LINE__, ldap_err2string(rc));
+	return rc;
+    }
+    if (ldap_skip_starttls || !(offers || use_starttls)) {
+	fprintf(stderr, "%d: the connection to the LDAP server has no TLS: the binds send the passwords in clear text\n", __LINE__);
+	return LDAP_SUCCESS;
+    }
+    rc = ldap_start_tls_s(ldap, NULL, NULL);
+    if (rc != LDAP_SUCCESS) {
+	char *diag = NULL;
+	ldap_get_option(ldap, LDAP_OPT_DIAGNOSTIC_MESSAGE, (void *) &diag);
+	fprintf(stderr, "%d: StartTLS: %s%s%s\n", __LINE__, ldap_err2string(rc), diag ? ": " : "", diag ? diag : "");
+	if (diag)
+	    ldap_memfree(diag);
+    }
+    return rc;
+}
+
 static int LDAP_init(LDAP **ldap, int *capabilities)
 {
     int rc = ldap_initialize(ldap, ldap_url);
@@ -205,7 +253,7 @@ static int LDAP_init(LDAP **ldap, int *capabilities)
     if (rc != LDAP_SUCCESS)
 	fprintf(stderr, "%d: %s\n", __LINE__, ldap_err2string(rc));
 
-    i = LDAP_OPT_X_TLS_NEVER;
+    i = LDAP_OPT_X_TLS_DEMAND;
     rc = ldap_set_option(*ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &i);
     if (rc != LDAP_SUCCESS)
 	fprintf(stderr, "%d: %s\n", __LINE__, ldap_err2string(rc));
@@ -314,17 +362,17 @@ static int LDAP_init(LDAP **ldap, int *capabilities)
 #ifdef LDAP_OPT_X_TLS_REQUIRE_CERT
     tmp = getenv("LDAP_OPT_X_TLS_REQUIRE_CERT");
     if (tmp) {
-	int val = LDAP_OPT_X_TLS_NEVER;
+	int val = LDAP_OPT_X_TLS_DEMAND;
 	if (!strcmp(tmp, "LDAP_OPT_X_TLS_HARD"))
 	    val = LDAP_OPT_X_TLS_HARD;
-	else if (!strcmp(tmp, "LDAP_OPT_X_TLS_DEMAND"))
-	    val = LDAP_OPT_X_TLS_DEMAND;
+	else if (!strcmp(tmp, "LDAP_OPT_X_TLS_NEVER"))
+	    val = LDAP_OPT_X_TLS_NEVER;
 	else if (!strcmp(tmp, "LDAP_OPT_X_TLS_ALLOW"))
 	    val = LDAP_OPT_X_TLS_ALLOW;
 	else if (!strcmp(tmp, "LDAP_OPT_X_TLS_TRY"))
 	    val = LDAP_OPT_X_TLS_TRY;
-	else if (strcmp(tmp, "LDAP_OPT_X_TLS_NEVER"))
-	    fprintf(stderr, "LDAP_OPT_X_TLS_REQUIRE_CERT: '%s' is not recognized\n", tmp);
+	else if (strcmp(tmp, "LDAP_OPT_X_TLS_DEMAND"))
+	    fprintf(stderr, "LDAP_OPT_X_TLS_REQUIRE_CERT: '%s' is not recognized, LDAP_OPT_X_TLS_DEMAND applies\n", tmp);
 	ldap_set_option(*ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &val);
     }
 #endif
@@ -364,6 +412,13 @@ static int LDAP_init(LDAP **ldap, int *capabilities)
 	return rc;
     }
 
+    // StartTLS before any bind: the binds carry the passwords
+    if ((rc = LDAP_starttls(*ldap)) != LDAP_SUCCESS) {
+	ldap_unbind_ext_s(*ldap, NULL, NULL);
+	*ldap = NULL;
+	return rc;
+    }
+
     rc = LDAP_bind(*ldap, ldap_dn, ldap_pw);
     if (rc != LDAP_SUCCESS)
 	fprintf(stderr, "%d: %s: %s\n", __LINE__, ldap_dn, ldap_err2string(rc));
@@ -389,17 +444,6 @@ static int LDAP_init(LDAP **ldap, int *capabilities)
 	    *capabilities = LDAP_eval_rootdse(*ldap, res);
 	ldap_msgfree(res);
     }
-    if ((*capabilities & CAP_STARTTLS) && !ldap_tls_inplace(*ldap)) {
-	int tls_rc = ldap_start_tls_s(*ldap, NULL, NULL);
-	if (tls_rc != LDAP_SUCCESS) {
-	    // libldap removes TLS from the connection after a failed handshake
-	    fprintf(stderr, "%d: StartTLS: %s\n", __LINE__, ldap_err2string(tls_rc));
-	    ldap_unbind_ext_s(*ldap, NULL, NULL);
-	    *ldap = NULL;
-	    return tls_rc;
-	}
-    }
-
     if (rc != LDAP_SUCCESS)
 	fprintf(stderr, "%d: %s\n", __LINE__, ldap_err2string(rc));
 
@@ -1220,6 +1264,7 @@ int main(int argc, char **argv __attribute__((unused)))
     ldap_filter_group = getenv("LDAP_FILTER_GROUP");
     ldap_dn = getenv("LDAP_USER");
     ldap_pw = getenv("LDAP_PASSWD");
+    use_starttls = getenv("USE_STARTTLS") != NULL;
 
     tmp = getenv("LDAP_SKIP_MEMBEROF");
     if (tmp)
@@ -1230,6 +1275,13 @@ int main(int argc, char **argv __attribute__((unused)))
     tmp = getenv("LDAP_SKIP_GROUPOFNAMES");
     if (tmp)
 	ldap_skip_groupofnames = atoi(tmp);
+    tmp = getenv("LDAP_SKIP_STARTTLS");
+    if (tmp)
+	ldap_skip_starttls = atoi(tmp);
+    if (use_starttls && ldap_skip_starttls) {
+	fprintf(stderr, "USE_STARTTLS and LDAP_SKIP_STARTTLS=1 contradict each other, aborting.\n");
+	exit(EXIT_FAILURE);
+    }
 
     errcode = 0;
     ad_result_regex = mypcre2_compile((PCRE2_SPTR8) ",\\s+data\\s+([^,]+),", PCRE2_ZERO_TERMINATED, 0, &errcode, &erroffset, NULL);
