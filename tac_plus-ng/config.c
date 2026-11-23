@@ -1214,7 +1214,9 @@ static void parse_tls_psk_key(struct sym *sym, tac_host *host)
 	    size_t buflen = len * 3 / 4 + 1;
 	    char buf[buflen];
 	    if (base64dec(sym->buf, len, buf, &buflen))
-		parse_error(sym, "base64 psk is malformed");
+		parse_error(sym, "Base64 PSK is malformed");
+	    if (buflen < 16)
+		parse_error(sym, "PSK is too short, a minimum of 128 bit is required");
 	    host->tls_psk_key->key.txt = mem_alloc(host->mem, buflen);
 	    host->tls_psk_key->key.len = buflen;
 	    memcpy(host->tls_psk_key->key.txt, buf, buflen);
@@ -1236,6 +1238,8 @@ static void parse_tls_psk_key(struct sym *sym, tac_host *host)
 	parse_error(sym, "Illegal hex sequence (odd number of characters)");
     l >>= 1;
     host->tls_psk_key->key.txt = mem_alloc(host->mem, l);
+    if (l < 16)
+	parse_error(sym, "PSK is too short, a minimum of 128 bit is required");
     host->tls_psk_key->key.len = l;
     for (size_t i = 0; i < l; i++) {
 	if (!isxdigit(*t) || !isxdigit(*(t + 1)))

@@ -379,6 +379,7 @@ int main(int argc, char **argv, char **envp)
 	report(NULL, LOG_INFO, ~0, "Version " VERSION " initialized");
 
     umask(022);
+    srandom(time(NULL)); // seed random(), whether it's being used or not
 
     mavis_detach();
 
