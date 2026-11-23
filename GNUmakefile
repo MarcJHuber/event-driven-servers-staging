@@ -12,7 +12,7 @@ OSs	:= $(shell uname -s | env -i $(TR) "[:upper:]/ " "[:lower:]--")
 OSr	:= $(shell uname -r | sed "s/(.*)//" | env -i $(TR) "[:upper:]/ " "[:lower:]--")
 OSm	:= $(shell uname -m | env -i $(TR) "[:upper:]/ " "[:lower:]--")
 OS	:= $(OSs)-$(OSr)-$(OSm)
-GITBRANCH := $(shell git branch --show-current 2>/dev/null | sed "s/\//--/g; s/[^A-Za-z0-9._-]/_/g")
+GITBRANCH := $(shell sh $(CURDIR)/misc/gitbranch.sh $(CURDIR))
 GITBRANCH_EXT :=
 
 ifneq ($(GITBRANCH),)
@@ -69,6 +69,9 @@ install_fakeroot_doc: dirs
 	@$(MAKE) -r $@
 
 endif
+
+print-builddir:
+	@echo build/$(OS)$(GITBRANCH_EXT)
 
 clean:
 	@-rm -rf build/$(OS)$(GITBRANCH_EXT) */Makefile */*/Makefile

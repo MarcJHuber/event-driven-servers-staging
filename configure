@@ -68,10 +68,8 @@ if (eval("require POSIX")) {
 	chomp ($sysname, $release, $machine, $cwd);
 }
 
-my $GITBRANCH = `git branch --show-current 2>/dev/null`;
+my $GITBRANCH = `sh "$cwd/misc/gitbranch.sh" "$cwd"`;
 chomp $GITBRANCH;
-$GITBRANCH =~ s/\//--/g;
-$GITBRANCH =~ s/[^A-Za-z0-9._-]/_/g;
 
 $sysname =~ tr/ \//--/;
 $machine =~ tr/ \//--/;
@@ -471,7 +469,7 @@ push(@OSLEVEL_ARR, 0, 0, 0);
 $DEFS{"OSLEVEL"} = sprintf ("0x%.2x%.2x%.4x", @OSLEVEL_ARR);
 $DEFS{"OSTYPE"} = $sysname;
 $DEFS{"OS"} = "$sysname-$release-$machine";
-$DEFS{'DEF'} .= " -DGITBRANCH=$DEFS{'GITBRANCH'} -DOSTYPE=$DEFS{'OSTYPE'} -DOSLEVEL=$DEFS{'OSLEVEL'} -DOS=" . '"\\"' . $DEFS{'OS'} . '\\""';
+$DEFS{'DEF'} .= " -DGITBRANCH=" . '"\\"' . $GITBRANCH . '\\""' . " -DOSTYPE=$DEFS{'OSTYPE'} -DOSLEVEL=$DEFS{'OSLEVEL'} -DOS=" . '"\\"' . $DEFS{'OS'} . '\\""';
 
 if ($cctest =~ /clang/) {
 	$DEFS{"CC"} = "clang";
