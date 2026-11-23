@@ -232,20 +232,19 @@ class Realm(DaemonTestCase):
 
 
 class SilentUnknownDevice(DaemonTestCase):
-    """A TCP connection of no device that sends nothing: a TLS build waits for its first bytes.
+    """A TCP connection of no device that sends nothing: the daemon rejects it at once.
 
-    periodics_ctx() ran 60 s later and read ctx->host, still NULL: SIGSEGV.
-    This test takes about 60 s; the interval is fixed in main.c.
+    A TLS build waited for its first bytes, and periodics_ctx() read ctx->host 60 s later, still NULL: SIGSEGV.
     """
 
     CONFIG = POLICY
     TEMPLATE = config.BASE.replace("address = 127.0.0.0/8", "address = 127.0.0.1/32")     # 127.0.0.77: no device
 
-    def test_closed_at_the_first_check(self):
+    def test_rejected_at_once(self):
         known = self.connect(single_connect=True)
         self.assertTrue(known.pap("alice", "alicepw").ok)
         unknown = self.connect(source="127.0.0.77")
-        self.assertTrue(unknown.closed(timeout=75), "the connection of no device is still open")
+        self.assertTrue(unknown.closed(timeout=5), "the connection of no device is still open")
         self.assertTrue(known.pap("alice", "alicepw").ok, "the worker lost the connection of the device")
 
 

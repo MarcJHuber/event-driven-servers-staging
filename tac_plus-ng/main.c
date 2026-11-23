@@ -307,10 +307,6 @@ static void periodics(struct context *ctx, int cur __attribute__((unused)))
 
 static void periodics_ctx(struct context *ctx, int cur __attribute__((unused)))
 {
-    if (!ctx->host) {		// no device after 60 s of the TLS check; accept_control_final() rejects it too
-	reject_conn(ctx, ctx->hint, __func__, __LINE__);
-	return;
-    }
     if (!ctx->out && !ctx->delayed) {
 	if ((ctx->udp == BISTATE_NO) && (ctx->host->tcp_timeout || ctx->dying) && (ctx->last_io + ctx->host->tcp_timeout < io_now.tv_sec)) {
 	    cleanup(ctx, ctx->sock);
@@ -1788,13 +1784,8 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 	ctx->inject_len = inject_len;
     }
 
-    if (ctx->use_tls == BISTATE_NO) {
-	if (h) {
-	    if (!h->key)
-		ctx->hint = "no encryption key found";
-	} else
-	    ctx->hint = "host unknown";
-    }
+    if (ctx->use_tls == BISTATE_NO && h && !h->key)
+	ctx->hint = "no encryption key found";
 
     str_set(&ctx->peer_addr_ascii, mem_strdup(ctx->mem, su_ntoa(&peer, buf, sizeof(buf)) ? buf : "<unknown>"), 0);
     snprintf(buf, sizeof(buf), "%u", su_get_port(&peer));
@@ -1813,6 +1804,12 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
     ctx->host = h;
 
     set_ctx_info(ctx, sd_ext);
+
+    // TLS, PSK and the MAVIS device lookup all need the device of the address
+    if (!ctx->host) {
+	reject_conn(ctx, "host unknown", __func__, __LINE__);
+	return;
+    }
 
     complete_host_mavis(ctx);
 }
@@ -1840,8 +1837,7 @@ static void complete_host_mavis(struct context *ctx)
 	return;
     }
 
-    if (ctx->host)
-	ctx->key = ctx->host->key;
+    ctx->key = ctx->host->key;
 
 #ifdef WITH_SSL
     io_set_cb_i(ctx->io, ctx->sock, (void *) accept_control_check_tls);
