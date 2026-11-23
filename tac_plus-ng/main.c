@@ -752,6 +752,7 @@ static void set_host_by_dn(struct context *ctx, char *in, int *m)
 	    tac_host *h = lookup_host(t, ctx->realm);
 	    if (h) {
 		ctx->host = h;
+	        report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
 		*m = c;
 		return;
 	    }
@@ -773,6 +774,7 @@ static void set_host_by_dn(struct context *ctx, char *in, int *m)
 	    tac_host *h = lookup_host(t, ctx->realm);
 	    if (h) {
 		ctx->host = h;
+	        report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
 		*m = c;
 		return;
 	    }
@@ -800,6 +802,7 @@ static void set_host_by_cn(struct context *ctx, char *t, int *m)
 	tac_host *h = lookup_host(t, ctx->realm);
 	if (h) {
 	    ctx->host = h;
+	    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
 	    *m = c;
 	    return;
 	}
@@ -816,8 +819,10 @@ static void set_host_by_psk_identity(struct context *ctx, char *t)
     char *at = strchr(t, '@');
     if (at) {
 	ctx->host = lookup_host(t, ctx->realm);
-	if (ctx->host)
+	if (ctx->host) {
+	    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
 	    return;
+	}
 	t = at + 1;
     }
     set_host_by_cn(ctx, t, NULL);
@@ -921,6 +926,8 @@ static void accept_control_tls(struct context *ctx, int cur)
 	return;
     }
     tac_host *by_address = ctx->host;	// before the PSK branch: "goto done" uses it
+    if (by_address)
+	report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Initial device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
 
 #ifndef OPENSSL_NO_PSK
     if (ctx->tls_psk_identity.txt) {
@@ -1242,18 +1249,25 @@ static void accept_control_tls(struct context *ctx, int cur)
 				su_convert(&su, AF_INET6);
 				struct in6_addr addr = { };
 				su_ptoh(&su, &addr);
-				if (by_address->tls_peer_cert_san_validation == TRISTATE_YES && memcmp(&addr, &ctx->device_addr, sizeof(addr)))
-				    continue;
-				radixtree_t *rxt = lookup_hosttree(ctx->realm);
-				if (rxt) {
-				    struct in6_addr agg_addr = addr;
-				    check_aggregate(ctx->realm, &agg_addr, S_device);
-				    tac_host *h = radix_lookup(rxt, &agg_addr, NULL);
-				    if (h) {
-					ctx->host = h;
-					prio = CERT_SAN_PRIO;
+				if (by_address->tls_peer_cert_san_validation == TRISTATE_YES) {
+				    if (memcmp(&addr, &ctx->device_addr, sizeof(addr))) {
+					report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Cert SAN IP address not validated.");
+					continue;
 				    }
-				}
+				    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Cert SAN IP address validated.");
+				    radixtree_t *rxt = lookup_hosttree(ctx->realm);
+				    if (rxt) {
+					struct in6_addr agg_addr = addr;
+					check_aggregate(ctx->realm, &agg_addr, S_device);
+					tac_host *h = radix_lookup(rxt, &agg_addr, NULL);
+					if (h) {
+					    ctx->host = h;
+					    prio = CERT_SAN_PRIO;
+					    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
+					}
+				    }
+				} else
+				    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
 			    }
 #undef CERT_SAN_PRIO
 			    continue;
@@ -1288,29 +1302,29 @@ static void accept_control_tls(struct context *ctx, int cur)
 		if (!ctx->host)
 		    set_host_by_dn(ctx, (char *) ctx->tls_peer_cert_subject.txt, NULL);
 
-#if 0
-				su_convert(&su, AF_INET6);
-				struct in6_addr addr = { };
-				su_ptoh(&su, &addr);
-				if (by_address->tls_peer_cert_san_validation == TRISTATE_YES && memcmp(&addr, &ctx->device_addr, sizeof(addr)))
-				    continue;
-#endif
 		// check for cn match
 		sockaddr_union su = { 0 };
 		if (!ctx->host && !su_pton(&su, ctx->tls_peer_cn.txt)) {
-			su_convert(&su, AF_INET6);
-			struct in6_addr addr = { };
-			su_ptoh(&su, &addr);
-			if (by_address->tls_peer_cert_cn_validation == TRISTATE_YES && !memcmp(&addr, &ctx->device_addr, sizeof(addr))) {
-				radixtree_t *rxt = lookup_hosttree(ctx->realm);
-				if (rxt) {
-				    struct in6_addr agg_addr = addr;
-				    check_aggregate(ctx->realm, &agg_addr, S_device);
-				    tac_host *h = radix_lookup(rxt, &agg_addr, NULL);
-				    if (h)
-					ctx->host = h;
+		    su_convert(&su, AF_INET6);
+		    struct in6_addr addr = { };
+		    su_ptoh(&su, &addr);
+		    if (by_address->tls_peer_cert_cn_validation == TRISTATE_YES) {
+			if (!memcmp(&addr, &ctx->device_addr, sizeof(addr))) {
+			    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Cert CN IP address validated.");
+			    radixtree_t *rxt = lookup_hosttree(ctx->realm);
+			    if (rxt) {
+				struct in6_addr agg_addr = addr;
+				check_aggregate(ctx->realm, &agg_addr, S_device);
+				tac_host *h = radix_lookup(rxt, &agg_addr, NULL);
+				if (h) {
+				    ctx->host = h;
+				    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s", ctx->host->name.txt);
 				}
-			}
+			    }
+			} else
+			    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Cert CN IP address not validated.");
+		    } else
+			report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Cert CN IP address validation not enabled, skipped.");
 		}
 		if (!ctx->host)
 		    set_host_by_cn(ctx, ctx->tls_peer_cn.txt, NULL);
