@@ -807,6 +807,40 @@ class MustChangeWithoutDialog(DaemonTestCase):
             self.assertEqual(c.pap("alice", "new").status_name, "PASS")
 
 
+
+@unittest.skipUnless(shutil.which("perl"), "the backend is a Perl script")
+class ShadowPasswordSalt(DaemonTestCase):
+    """The salt of a changed password in mavis_tacplus_shadow.pl comes from /dev/urandom, not from Perl's rand().
+
+    rand() is drand48() with a 32-bit seed: from a few salts in a shadow
+    file the next ones follow. To show where the salt comes from, the
+    backend runs with rand() seeded to the same value twice (PERL5OPT);
+    with rand() both password changes get the same salt.
+    """
+
+    CONFIG = None
+
+    def changed_hash(self, seed_dir, name):
+        shadow = self.scratch_file(name, "alice:%s:0:0:99999:7:::\n" % crypt_md5("pw"))
+        d = self.start_daemon("""
+	mavis module = external {
+		setenv SHADOWFILE = "%s"
+		setenv PERL5OPT = "-I%s -MFixedSeed"
+		exec = "%s"
+	}
+""" % (shadow, seed_dir, SHADOW) + BACKEND.replace("login backend = mavis", "login backend = mavis chpass") + PERMIT)
+        with d.connect() as c:
+            r = c.ascii_login("alice", "pw", data=["new", "new"])
+        self.assertEqual(r.statuses, ["GETPASS", "GETDATA", "GETDATA", "PASS"], r)
+        with open(shadow) as f:
+            return f.read().split(":")[1]
+
+    def test_salt_does_not_come_from_rand(self):
+        seed_dir = os.path.dirname(self.scratch_file("FixedSeed.pm", "package FixedSeed;\nsrand(1);\n1;\n"))
+        first, second = self.changed_hash(seed_dir, "shadow1"), self.changed_hash(seed_dir, "shadow2")
+        self.assertTrue(first.startswith("$1$") and second.startswith("$1$"), (first, second))
+        self.assertNotEqual(first.split("$")[2], second.split("$")[2], "the same salt twice: it comes from rand()")
+
 class ProfileConflict(DaemonTestCase):
     """The backend authenticates the user, but the profile it sends sets a password that is not "mavis".
 

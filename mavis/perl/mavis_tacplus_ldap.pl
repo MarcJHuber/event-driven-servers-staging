@@ -324,6 +324,17 @@ my $ldap = undef;
 
 my @V;
 
+# Random bytes from the kernel. Perl's rand() is no source for one-time codes or salts:
+# drand48() with a 32-bit seed, so a few outputs give away the next ones.
+sub random_bytes($) {
+	my $n = shift;
+	open(my $fh, '<:raw', '/dev/urandom') or die "/dev/urandom: $!\n";
+	my $got = read($fh, my $buf, $n);
+	close($fh);
+	die "/dev/urandom: short read\n" unless defined($got) && $got == $n;
+	return $buf;
+}
+
 sub get_memberof($) {
 	my $mesg = $ldap->search(base => $_[0], scope=>'base', filter=>'(objectclass=*)', attrs=>['memberOf']);
 	if ($mesg->code){
@@ -541,7 +552,7 @@ while ($in = <>) {
 				}
 
 				if (0 == $has_extension_password_modify) {
-					my $cr = "{crypt}" . crypt($V[AV_A_PASSWORD_NEW], join '', ('.', '/', 0..9, 'A'..'Z', 'a'..'z')[rand 64, rand 64]);
+					my $cr = "{crypt}" . crypt($V[AV_A_PASSWORD_NEW], join '', map { ('.', '/', 0..9, 'A'..'Z', 'a'..'z')[ord($_) % 64] } split //, random_bytes(2));
 					$mesg = $ldap->modify($authdn, replace => { 'userPassword' => $cr });
 				} else {
 					$mesg = $ldap->set_password(oldpasswd => $V[AV_A_PASSWORD], newpasswd => $V[AV_A_PASSWORD_NEW]);
