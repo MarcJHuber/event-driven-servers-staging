@@ -203,6 +203,17 @@ def perl_exec(case, script, stderr_log=None):
     return f'"{wrapper}" "{name}"'
 
 
+def wait_for_idle_close(slapd):
+    """Wait until slapd closed a connection for its idletimeout."""
+    deadline = time.monotonic() + START_TIMEOUT
+    while time.monotonic() < deadline:
+        with open(slapd.log, errors="replace") as f:
+            if "closed (idletimeout)" in f.read():
+                return
+        select.select([], [], [], 0.1)
+    raise AssertionError("slapd closed no connection for its idletimeout")
+
+
 def first_existing(paths):
     return next((p for p in paths if os.path.isdir(p)), None)
 
@@ -1216,6 +1227,23 @@ class LdapPerl(LdapTests, DaemonTestCase):
         with open(self.stderr_log, errors="replace") as f:
             self.assertNotIn(CLEAR_TEXT_WARNING, f.read())
 
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_starttls_after_a_reconnect(self):
+        """slapd closes the idle connection: the new connection of the back-end starts TLS before its bind."""
+        ca = self.ca()
+        self.stderr_log = self.scratch_file("reconnect.log", "")
+        slapd = self.slapd(tls=self.ldaps(ca, "security simple_bind=1\nidletimeout 1\n"), starttls=True)
+        extra = "".join(f'\t\tsetenv {name} = "{value}"\n' for name, value in self.TRUST(ca.cert).items())
+        d = self.start_daemon(POLICY.substitute(module=self.module(slapd.url, extra + "\t\tchilds min = 1\n"
+                                                                   "\t\tchilds max = 1\n"),
+                                                staff=STAFF, base=BASE, last=WIDE - 1))
+        self.assertEqual(self.login(d), "PASS")
+        wait_for_idle_close(slapd)
+        self.assertEqual(self.login(d), "PASS")
+        with open(self.stderr_log, errors="replace") as f:  # one of the two reconnect paths
+            self.assertRegex(f.read(), "ldap connection detected dead|ldap retry, due to bind failure")
+        self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
+
     def test_ad_root_dse(self):
         """The root DSE of AD: the server type is microsoft, and its default filter (sAMAccountName) finds alice."""
         peer = AdPeer()
@@ -1396,7 +1424,9 @@ class LdapPerlOldStartTls(DaemonTestCase):
 		setenv LDAP_USER = "{READER}"
 		setenv LDAP_PASSWD = "readerpw"
 		setenv FLAG_CHPW = "1"
-{extra}		exec = {perl_exec(self, LDAP_PERL_OLD, stderr_log)}
+{extra}		childs min = 1
+		childs max = 1
+		exec = {perl_exec(self, LDAP_PERL_OLD, stderr_log)}
 	}}
 	user backend = mavis
 	login backend = mavis chpass
@@ -1435,6 +1465,17 @@ class LdapPerlOldStartTls(DaemonTestCase):
             slapd = new_slapd(self)
             self.assert_login(self.start(slapd.url), "FAIL")
             self.assertEqual(slapd.binds(), [])
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_starttls_after_a_reconnect(self):
+        """FLAG_CACHE_CONNECTION, slapd closes the idle connection: the new connection starts TLS before its bind."""
+        ca = LdapTests.ca(self)
+        slapd = new_slapd(self, tls=LdapTests.ldaps(ca, "security simple_bind=1\nidletimeout 1\n"), starttls=True)
+        d = self.start(slapd.url, FLAG_CACHE_CONNECTION="1")
+        self.assert_login(d, "PASS")
+        wait_for_idle_close(slapd)
+        self.assert_login(d, "PASS")
+        self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
 
     def test_skip_starttls(self):
         """LDAP_SKIP_STARTTLS=1: the binds in clear text, and a warning on stderr."""
@@ -1483,6 +1524,34 @@ class LdapPerlAuthOnly(DaemonTestCase):
         slapd = new_slapd(self)
         self.assertEqual(self.results(slapd.url)[0], ["ERR"])
         self.assertEqual(slapd.binds(), [])
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_starttls_after_a_reconnect(self):
+        """FLAG_CACHE_CONNECTION, slapd closes the idle connection: the new connection starts TLS before its bind."""
+        ca = LdapTests.ca(self)
+        slapd = new_slapd(self, tls=LdapTests.ldaps(ca, "security simple_bind=1\nidletimeout 1\n"), starttls=True)
+        env = {**os.environ, "LDAP_HOSTS": slapd.url, "LDAP_BASE": BASE, "LDAP_USER": READER,
+               "LDAP_PASSWD": "readerpw", "FLAG_CACHE_CONNECTION": "1"}
+        with subprocess.Popen([PERL, LDAP_PERL_AUTHONLY], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, env=env) as p:
+            watchdog = threading.Timer(60, p.kill)
+            watchdog.start()
+            try:
+                for i in range(2):
+                    if i:
+                        wait_for_idle_close(slapd)
+                    p.stdin.write(b"4 alice\n8 alicepw\n49 AUTH\n=\n")
+                    p.stdin.flush()
+                    reply = b""
+                    while not re.search(rb"(?m)^=\d+\n", reply):
+                        line = p.stdout.readline()
+                        self.assertTrue(line, "the back-end exited")
+                        reply += line
+                    self.assertRegex(reply, rb"(?m)^6 ACK$")
+            finally:
+                watchdog.cancel()
+                p.kill()
+        self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
 
     def test_skip_starttls(self):
         """LDAP_SKIP_STARTTLS=1: the binds in clear text, and a warning on stderr."""
