@@ -675,7 +675,16 @@ static tac_realm *new_realm(char *name, tac_realm *parent)
 #if defined(WITH_SSL)
     r->tls_verify_depth = -1;
     r->tls_psk_key_exchange = S_unknown;
-    //r->tls_ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
+    r->tls_ciphers = // TLS1_2
+	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" //
+	":TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384" //
+	":TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" //
+	":TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" //
+	":TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256";
+    r->tls_cipher_suites = // TLS1_3
+	"TLS_AES_256_GCM_SHA384" //
+	":TLS_CHACHA20_POLY1305_SHA256" //
+	":TLS_AES_128_GCM_SHA256";
     r->tls_min_version = TLS1_3_VERSION;
 #endif
 
