@@ -84,8 +84,8 @@ class Scenario(DaemonTestCase):
         self.assertEqual(len({e["pid"] for e in auth}), 1, "one MAVIS child expected: %s" % auth)
 
     def test_forced_results(self):
-        """ERROR without a fallback user is a FAIL for the client too (the log tells them apart)."""
-        for result, status in (("ACK", "PASS"), ("NAK", "FAIL"), ("NOTFOUND", "FAIL"), ("ERROR", "FAIL")):
+        """ERROR from the backend is an ERROR for the client (without "authentication fallback = permit")."""
+        for result, status in (("ACK", "PASS"), ("NAK", "FAIL"), ("NOTFOUND", "FAIL"), ("ERROR", "ERROR")):
             with self.subTest(result=result):
                 self.stub.set(users={"alice": {"password": "first"}}, result={"alice:AUTH": result})
                 self.assertEqual(self.connect().pap("alice", "wrong").status_name, status)
@@ -129,6 +129,85 @@ class BackendFailed(DaemonTestCase):
 
     def test_configured_message(self):
         self.assertEqual(self.login('\tmessage BACKEND_FAILED = "Directory down."\n'), ("ERROR", "Directory down."))
+
+
+@unittest.skipUnless(LINUX, "127.0.0.0/8 local addresses")
+class BackendFailedNotAscii(DaemonTestCase):
+    """An ERROR from the backend is an ERROR for the client also for a password change, PAP and enable."""
+
+    CONFIG = Stub.module(childs=(1, 1)) + BACKEND.replace("login backend = mavis", "login backend = mavis chpass") + """
+	device paplogin {
+		address = 127.0.0.91
+		key = tactest
+		pap password mapping = login
+	}
+	device enablelogin {
+		address = 127.0.0.92
+		key = tactest
+		enable 15 = login
+		augmented-enable = permit
+	}
+""" + PERMIT
+    BACKEND_FAILED = ("ERROR", "Authentication backend failure.")
+
+    def setUp(self):
+        super().setUp()
+        self.stub = Stub(self.daemon)
+
+    def backend_error(self, tactype):
+        self.stub.set(users={"alice": {"password": "old", "new_password": "new"}}, result={"alice:" + tactype: "ERROR"})
+
+    def answer(self, r):
+        return r.status_name, r.server_msg
+
+    def test_password_change_dialog(self):
+        self.backend_error("CHPW")
+        before = self.stub.count(type="CHPW")
+        r = self.connect().ascii_login("alice", "", data=["old", "new", "new"])
+        self.assertEqual(self.answer(r), self.BACKEND_FAILED, r)
+        self.assertEqual([e["result"] for e in self.stub.requests(type="CHPW")[before:]], ["ERROR"])
+        self.wait_log("authentication", "\talice\ttty0\t127.0.0.1\tpassword change failed (backend error)")
+
+    def test_change_password_request(self):
+        """The TACACS+ CHPASS action of RFC 8907 5.4.4.3."""
+        self.backend_error("CHPW")
+        s = self.connect().session()
+        r = s.dialog(s.start(user="alice", action=2), {"GETDATA": ["old"], "GETPASS": ["new", "new"]})
+        self.assertEqual(self.answer(r), self.BACKEND_FAILED, r)
+
+    def test_pap(self):
+        self.backend_error("AUTH")
+        self.assertEqual(self.answer(self.connect().pap("alice", "old")), self.BACKEND_FAILED)
+        self.wait_log("authentication", "\talice\ttty0\t127.0.0.1\tpap login failed (backend error)")
+
+    def test_pap_mapped_to_login(self):
+        self.backend_error("AUTH")
+        self.assertEqual(self.answer(self.connect(source="127.0.0.91").pap("alice", "old")), self.BACKEND_FAILED)
+
+    def test_enable_with_the_login_password(self):
+        self.backend_error("AUTH")
+        r = self.connect(source="127.0.0.92").enable("old", user="alice")
+        self.assertEqual((r.statuses, r.server_msg), (["GETPASS", "ERROR"], self.BACKEND_FAILED[1]), r)
+
+    def test_augmented_enable(self):
+        self.backend_error("AUTH")
+        # two answers: after the MAVIS answer the daemon asks a MAVIS user again
+        r = self.connect(source="127.0.0.92").enable(["alice old", "alice old"], user="$enable$")
+        self.assertEqual(self.answer(r), self.BACKEND_FAILED, r)
+
+
+class BackendFailedWithFallback(DaemonTestCase):
+    """With "authentication fallback = permit" an ERROR from the backend stays a FAIL for the client."""
+
+    CONFIG = None
+
+    def test_password_change(self):
+        policy = Stub.module(childs=(1, 1)) + BACKEND.replace("login backend = mavis", "login backend = mavis chpass")
+        d = self.start_daemon(policy + "\tauthentication fallback = permit\n" + PERMIT)
+        Stub(d).set(users={"alice": {"password": "old", "new_password": "new"}}, result={"alice:CHPW": "ERROR"})
+        with d.connect() as c:
+            r = c.ascii_login("alice", "", data=["old", "new", "new"])
+        self.assertEqual(r.status_name, "FAIL", r)
 
 
 class Fallback(DaemonTestCase):

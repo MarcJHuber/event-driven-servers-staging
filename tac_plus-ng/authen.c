@@ -674,6 +674,16 @@ static int refuse_rad_session(tac_session *session, char *info, enum pw_ix pw_ix
     return 0;
 }
 
+// a backend error (MAVIS ERROR) is a TACACS+ ERROR, not a FAIL
+static int refuse_backend_error(tac_session *session, enum token res, char *info, enum hint_enum hint)
+{
+    if (res != S_error)
+	return 0;
+    report_auth(session, info, hint, res);
+    send_authen_error(session, "%s", eval_log_format(session, session->ctx, NULL, li_backend_failed, io_now.tv_sec, NULL));
+    return -1;
+}
+
 static void set_mfa(tac_session *session)
 {
     if (session->user && session->user->mavis_mfa_acl)
@@ -1033,6 +1043,9 @@ static void do_chpass(tac_session *session)
     char *resp = NULL;
     enum token res = check_access(session, pwdat, session->password_new, &hint, &resp);
 
+    if (refuse_backend_error(session, res, info, hint))
+	return;
+
     if (res == S_permit) {
 	session->passwd_mustchange = 0;
 	if (resp) {
@@ -1133,6 +1146,8 @@ static void do_enable_login(tac_session *session)
 	return;
 
     enum token res = check_access(session, pwdat, session->password, &hint, &resp);
+    if (refuse_backend_error(session, res, info, hint))
+	return;
     if (res == S_permit)
 	resp = NULL;
 
@@ -1195,6 +1210,8 @@ static void do_enable_augmented(tac_session *session)
 	}
     }
 
+    if (refuse_backend_error(session, res, info, hint))
+	return;
     if (res == S_permit)
 	resp = NULL;
 
@@ -1343,11 +1360,10 @@ static void do_ascii_login(tac_session *session)
 
     mem_free(session->mem, &session->challenge);
 
-    switch (res) {
-    case S_error:
-	report_auth(session, info, hint, res);
-	send_authen_error(session, "%s", eval_log_format(session, session->ctx, NULL, li_backend_failed, io_now.tv_sec, NULL));
+    if (refuse_backend_error(session, res, info, hint))
 	return;
+
+    switch (res) {
     case S_permit:
 	if (session->passwd_mustchange) {
 	    if (!session->user_msg.txt)
@@ -1697,6 +1713,8 @@ static void do_login(tac_session *session)
 	return;
 
     res = check_access(session, pwdat, session->password, &hint, &resp);
+    if (refuse_backend_error(session, res, info, hint))
+	return;
 
     if (!resp)
 	resp = session->user_msg.txt;
@@ -1742,6 +1760,8 @@ static void do_pap(tac_session *session)
 	return;
 
     res = check_access(session, pwdat, session->password, &hint, &resp);
+    if (refuse_backend_error(session, res, info, hint))
+	return;
 
     if (!resp)
 	resp = session->user_msg.txt;
