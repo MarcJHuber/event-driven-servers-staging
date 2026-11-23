@@ -486,8 +486,8 @@ struct realm {
     char *tls_cert;
     char *tls_key;
     char *tls_pass;
-    char *tls_ciphers;
-    char *tls_cipher_suites;
+    char *tls_ciphers;		// TLS1_2
+    char *tls_cipher_suites;	// TLS1_3
     char *tls_psk_dhe_groups;
     char *tls_cafile;
     int tls_verify_depth;
