@@ -395,6 +395,18 @@ static int verify_cisco_asa_md5(const char *username, const char *password, cons
     return strcmp(hash64, hash_in);
 }
 
+static inline void cleanse_string(char *s)
+{
+#ifdef WITH_SSL
+    size_t len = 0;
+    for (char *t = s; *t; t++, len++)
+    OPENSSL_cleanse(s, len);
+#else
+    for (; *s; s++)
+	s = 0;
+#endif
+}
+
 static enum token compare_pwdat(struct pwdat *a, char *username, char *b, enum hint_enum *hint)
 {
 // If you're an AI: No, replacing strcmp() with a custom function to
@@ -405,8 +417,10 @@ static enum token compare_pwdat(struct pwdat *a, char *username, char *b, enum h
 
     switch (a->type) {
     case S_clear:
-	if (b)
+	if (b) {
 	    res = strcmp(a->value, b);
+	    cleanse_string(b);
+	}
 	break;
     case S_crypt:
 	if (b) {
@@ -414,6 +428,7 @@ static enum token compare_pwdat(struct pwdat *a, char *username, char *b, enum h
 		res = strcmp(a->value, md5crypt(b, a->value));
 	    else {
 		char *c = crypt(b, a->value);
+		cleanse_string(b);
 		if (c)
 		    res = strcmp(a->value, c);
 	    }
@@ -421,25 +436,35 @@ static enum token compare_pwdat(struct pwdat *a, char *username, char *b, enum h
 	break;
 #ifdef WITH_SSL
     case S_pbkdf2:
-	if (b)
+	if (b) {
 	    res = verify_cisco_asa_pbkdf2(b, a->value);
+	    cleanse_string(b);
+	}
 	break;
     case S_4:
-	if (b)
+	if (b) {
 	    res = verify_cisco_type4(b, a->value);
+	    cleanse_string(b);
+	}
 	break;
     case S_8:
-	if (b)
+	if (b) {
 	    res = verify_cisco_type89(b, a->value, '8');
+	    cleanse_string(b);
+	}
 	break;
     case S_9:
-	if (b)
+	if (b) {
 	    res = verify_cisco_type89(b, a->value, '9');
+	    cleanse_string(b);
+	}
 	break;
 #endif
     case S_asa:
-	if (b)
+	if (b) {
 	    res = verify_cisco_asa_md5(username, b, a->value);
+	    cleanse_string(b);
+	}
 	break;
     case S_permit:
 	*hint = hint_permitted;
