@@ -130,7 +130,7 @@ void send_acct_reply(tac_session * session, u_char status, char *msg, char *data
 	memcpy(p, data, data_len);
 
     write_packet(session->ctx, pak);
-    cleanup_session(session);
+    cleanup_session(session, 0);
 }
 
 /* send an authorization reply packet */
@@ -191,7 +191,7 @@ void send_author_reply(tac_session * session, u_char status, char *msg, char *da
 
     write_packet(session->ctx, pak);
 
-    cleanup_session(session);
+    cleanup_session(session, 0);
 }
 
 /* Send an authentication reply packet indicating an error has occurred. */
@@ -295,7 +295,7 @@ void send_authen_reply(tac_session * session, int status, char *msg, int msg_len
     case TAC_PLUS_AUTHEN_STATUS_PASS:
     case TAC_PLUS_AUTHEN_STATUS_ERROR:
     case TAC_PLUS_AUTHEN_STATUS_FOLLOW:
-	cleanup_session(session);
+	cleanup_session(session, 0);
     }
 }
 
@@ -549,7 +549,7 @@ void tac_read(struct context *ctx, int cur)
 
 	default:
 	    report(session, LOG_ERR, ~0, "%s: %s", ctx->nas_address_ascii, msg);
-	    cleanup_session(session);
+	    cleanup_session(session, 0);
 	}
     } while (more_keys);
 
@@ -559,6 +559,10 @@ void tac_read(struct context *ctx, int cur)
     ctx->key_fixed = 1;
     mem_free(ctx->mem, &ctx->in);
     ctx->hdroff = 0;
+
+    // a session ended without a reply, see cleanup_session()
+    if (ctx->dying && !ctx->out && !ctx->delayed)
+	cleanup(ctx, cur);
 }
 
 void tac_write(struct context *ctx, int cur)
@@ -618,7 +622,8 @@ static tac_session *new_session(struct context *ctx, tac_pak_hdr * hdr)
     return session;
 }
 
-void cleanup_session(tac_session * session)
+// may_clean_ctx: the caller does not use ctx after the call
+void cleanup_session(tac_session * session, int may_clean_ctx)
 {
     struct context *ctx = session->ctx;
 
@@ -643,7 +648,7 @@ void cleanup_session(tac_session * session)
     mem_free(ctx->mem, &session);
     if ((ctx->cleanup_when_idle == TRISTATE_YES)
 	&& (!ctx->single_connection_flag || (die_when_idle && !RB_first(ctx->sessions) && !RB_first(ctx->shellctxcache)))) {
-	if (ctx->out || ctx->delayed)	// pending output
+	if (ctx->out || ctx->delayed || !may_clean_ctx)
 	    ctx->dying = 1;
 	else
 	    cleanup(ctx, ctx->sock);

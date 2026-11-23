@@ -756,7 +756,7 @@ static __inline__ int minimum(int a, int b)
 void tac_read(struct context *, int);
 void tac_write(struct context *, int);
 
-void cleanup_session(tac_session *);
+void cleanup_session(tac_session *, int);
 
 void mavis_lookup(tac_session *, void (*)(tac_session *), char *, enum pw_ix);
 tac_user *lookup_user(rb_tree_t *, char *);

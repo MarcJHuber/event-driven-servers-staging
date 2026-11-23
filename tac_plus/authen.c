@@ -1889,7 +1889,7 @@ void authen(tac_session *session, tac_pak_hdr *hdr)
 	    t = tmp;
 	}
 	report_auth(session, t, hint_abort);
-	cleanup_session(session);
+	cleanup_session(session, 0);
 	return;
     } else {			/* hdr->seq_no != 1 */
 	username_required = 0;

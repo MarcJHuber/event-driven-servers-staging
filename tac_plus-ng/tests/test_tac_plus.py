@@ -5,10 +5,12 @@ with config.TAC_PLUS around the policy, in tac_plus syntax.
 """
 
 import os
+import time
 import unittest
 
-from tactest import DaemonTestCase, config, prefix
+from tactest import DaemonTestCase, Stub, config, prefix
 from tactest.daemon import parse_only
+from tactest.tacacs import AUTHEN_TYPE_ASCII, Packet
 
 TAC_PLUS = os.access(os.path.join(prefix(), "sbin", "tac_plus"), os.X_OK)
 
@@ -130,6 +132,112 @@ class BareExclmark(TacPlusTestCase):
                 code, out = parse_only(path, program="tac_plus")
                 self.assertEqual(code, 78, out)
                 self.assertIn("Expected '=', but got '%s'" % name, out)
+
+
+class SingleConnectionMayClose(TacPlusTestCase):
+    """With single-connection may-close, the end of a session closes the connection; the context is freed once."""
+
+    CONFIG = """
+	session timeout = 30
+	host = may-close {
+		address = 127.0.0.1/32
+		single-connection = yes
+		single-connection may-close = yes
+		password backoff = 1
+	}
+	user = alice {
+		login = clear alicepw
+		pap = clear alicepw
+		service = shell { default command = permit }
+	}
+"""
+
+    def login_in_progress(self, daemon=None):
+        """A connection with an ASCII login that waits for the user name."""
+        c = self.connect(daemon)
+        s = c.session()
+        self.assertEqual(s.start(authen_type=AUTHEN_TYPE_ASCII).status_name, "GETUSER")
+        return c, s
+
+    def test_a_reply_closes_the_connection(self):
+        with self.connect() as c:
+            self.assertEqual(c.pap("alice", "alicepw").status_name, "PASS")
+            self.assertTrue(c.closed(), "the connection stays open after the reply")
+
+    def test_an_authorization_reply_closes_the_connection(self):
+        with self.connect() as c:
+            self.assertEqual(c.author("alice", ["service=shell", "cmd="]).status_name, "PASS_ADD")
+            self.assertTrue(c.closed(), "the connection stays open after the reply")
+
+    def test_an_accounting_reply_closes_the_connection(self):
+        with self.connect() as c:
+            self.assertTrue(c.acct("alice", ["task_id=1", "service=shell"]).ok)
+            self.assertTrue(c.closed(), "the connection stays open after the reply")
+
+    def test_a_reply_from_mavis_comes_before_the_close(self):
+        """The connection has no output while the daemon waits for the MAVIS answer."""
+        backend = "\tuser backend = mavis\n\tpap backend = mavis\n"
+        d = self.start_daemon(Stub.module(childs=(1, 1)) + backend + self.CONFIG)
+        stub = Stub(d)
+        stub.set(users={"bob": {"password": "bobpw"}})
+        with d.connect() as c:
+            self.assertEqual(c.pap("bob", "bobpw").status_name, "PASS")
+            self.assertTrue(c.closed(), "the connection stays open after the reply")
+        self.assertEqual([e["type"] for e in stub.requests()], ["AUTH"])
+
+    def test_a_delayed_reply_comes_before_the_close(self):
+        """password backoff delays the FAIL reply."""
+        with self.connect() as c:
+            start = time.monotonic()
+            self.assertEqual(c.pap("alice", "wrong").status_name, "FAIL")
+            self.assertGreaterEqual(time.monotonic() - start, 0.9, "the reply has no delay")
+            self.assertTrue(c.closed(), "the connection stays open after the reply")
+
+    def test_a_wrong_sequence_number_closes_the_connection(self):
+        c, s = self.login_in_progress()
+        c.send(Packet.authen_continue(user_msg="alice", seq_no=5, session_id=s.session_id))
+        self.assertTrue(c.closed(), "the connection stays open")
+
+    def test_an_abort_closes_the_connection(self):
+        c, s = self.login_in_progress()
+        s.cont(abort=True)
+        self.assertTrue(c.closed(), "the connection stays open")
+
+    def test_an_unknown_packet_type_closes_the_connection(self):
+        with self.connect() as c:
+            c.send(Packet(9, b"\0" * 8))
+            self.assertTrue(c.closed(), "the connection stays open")
+
+    def test_a_disconnect_in_an_ascii_login(self):
+        c, _ = self.login_in_progress()
+        c.close()
+        with self.connect() as c:
+            self.assertEqual(c.pap("alice", "alicepw").status_name, "PASS")
+
+    def test_the_periodic_task_closes_only_may_close_connections(self):
+        """The periodic task of a connection runs 60 s after the connection opens.
+
+        It ends the sessions that have timed out. With single-connection = no, a connection
+        can have two sessions: the second has not timed out then. A single connection
+        that the client asked for stays open after a reply, until the periodic task.
+        A connection of a host with may-close = no stays open.
+        """
+        no_single = self.start_daemon(self.CONFIG.replace("single-connection = yes", "single-connection = no"))
+        keep_open = self.start_daemon(self.CONFIG.replace("may-close = yes", "may-close = no"))
+        keep = self.connect(keep_open)
+        self.assertEqual(keep.pap("alice", "alicepw").status_name, "PASS")
+        idle = self.connect(single_connect=True)
+        self.assertEqual(idle.pap("alice", "alicepw").status_name, "PASS")
+        self.assertFalse(idle.closed(timeout=1), "the single connection closes after the reply")
+        c1, _ = self.login_in_progress()
+        c2, _ = self.login_in_progress(no_single)
+        time.sleep(35)
+        self.assertEqual(c2.session().start(authen_type=AUTHEN_TYPE_ASCII).status_name, "GETUSER")
+        self.assertTrue(c1.closed(timeout=35), "the connection stays open")
+        self.assertTrue(c2.closed(timeout=35), "the connection with two sessions stays open")
+        self.assertTrue(idle.closed(timeout=5), "the idle single connection stays open")
+        self.assertFalse(keep.closed(timeout=1), "the connection of the may-close = no host closes")
+        self.assertEqual(keep.pap("alice", "alicepw").status_name, "PASS")
 
 
 if __name__ == "__main__":
