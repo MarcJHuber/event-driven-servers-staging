@@ -31,7 +31,7 @@ ifeq ($(wildcard $(MF_OBJ)),)
 		ifeq ($(wildcard $(MF_OBJ)),)
 			MF_OBJ=../../../build/Makefile.inc.$(OS)$(GITBRANCH_EXT)
 			ifeq ($(wildcard $(MF_OBJ)),)
-$(error Please run the configure script to create Makefile.inc.$(OS))$(GITBRANCH_EXT)
+$(error Please run the configure script to create Makefile.inc.$(OS)$(GITBRANCH_EXT))
 			endif
 		endif
 	endif
