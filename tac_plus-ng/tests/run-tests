@@ -60,19 +60,18 @@ fi
 now() { date +%s; }
 
 if [ -z "$TACTEST_PREFIX" ]; then
-	# build/<OS> exactly as GNUmakefile names it
-	OS=$(uname -s | tr '[:upper:]/ ' '[:lower:]--')-$(uname -r | sed 's/(.*)//' | tr '[:upper:]/ ' '[:lower:]--')-$(uname -m | tr '[:upper:]/ ' '[:lower:]--')
-	TACTEST_PREFIX=$TOP/build/$OS/tests-prefix
 	MAKE=${MAKE:-$(command -v gmake || echo make)}
 	START=$(now)
 	cd "$TOP"
+	BUILD=$($MAKE -s --no-print-directory print-builddir)
+	TACTEST_PREFIX=$TOP/$BUILD/tests-prefix
 	# configure cleans the build only when Makefile.inc changes, and the
 	# flags of "make CC=..." don't go there: a build with other flags must
 	# not reuse the objects of the previous one
-	STAMP=build/$OS/tests-build-flags
+	STAMP=$BUILD/tests-build-flags
 	FLAGS="CC=${CC-} TACTEST_CC=${TACTEST_CC-} TACTEST_CONFIGURE=${TACTEST_CONFIGURE-}"
-	if [ -d "build/$OS" ] && [ "$(cat "$STAMP" 2>/dev/null)" != "$FLAGS" ]; then
-		echo "run-tests: build flags changed, cleaning build/$OS"
+	if [ -d "$BUILD" ] && [ "$(cat "$STAMP" 2>/dev/null)" != "$FLAGS" ]; then
+		echo "run-tests: build flags changed, cleaning $BUILD"
 		$MAKE clean
 	fi
 	# no -j: the Makefiles don't declare the dependencies a parallel build needs

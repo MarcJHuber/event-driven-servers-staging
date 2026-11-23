@@ -21,7 +21,7 @@ BACKENDS +=	tacplus-ng_ntlmauth
 BI = $(patsubst %,$(M)/mavis_%.$(SUF), $(BACKENDS))
 
 $(BI): $(M)/%.$(SUF): %.$(SUF)
-	perl $(BASE)/scripts/install_ascii.pl -R "# REMOVE #" -b -S "s#${M}#${LIBDIR_DEST}/mavis#g" -S "s#/usr/local/lib/mavis#${LIBDIR_DEST}/mavis#g" -m 0755 $^ $@
+	perl $(BASE)/scripts/install_ascii.pl -R "# REMOVE #" -b -S "s|${M}|${LIBDIR_DEST}/mavis|g" -S "s|/usr/local/lib/mavis|${LIBDIR_DEST}/mavis|g" -m 0755 $^ $@
 
 $(M)/$(P): $(P)
 	perl $(BASE)/scripts/install_ascii.pl -R "# REMOVE #" -b -m 0644 $^ $@
@@ -42,5 +42,5 @@ $(EI): $(ME)/%: %
 install: $(M) $(ME) $(BI) $(M)/$(P) $(EI)
 
 install_stage:
-	@$(MAKE) INSTALLROOT=$(BASE)/build/$(OS)/fakeroot install
+	@$(MAKE) INSTALLROOT=$(BASE)/build/$(OS)$(GITBRANCH_EXT)/fakeroot install
 
