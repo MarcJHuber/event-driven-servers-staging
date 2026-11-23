@@ -105,6 +105,7 @@ void catchsegv(int sig __attribute__((unused)))
 	UNUSED_RESULT(seteuid(getuid()));
 	UNUSED_RESULT(setegid(getgid()));
 
+#if 0
 	if (getrlimit(RLIMIT_CORE, &rlim)) {
 	    logerr("getrlimit (%s:%d)", __FILE__, __LINE__);
 	    exit(EX_OSERR);
@@ -112,6 +113,7 @@ void catchsegv(int sig __attribute__((unused)))
 
 	rlim.rlim_cur = rlim.rlim_max;
 	setrlimit(RLIMIT_CORE, &rlim);
+#endif
 
 	if (chdir(coredumpdir)) {
 	    logerr("SIGSEGV: chdir(%s) (%s:%d)", coredumpdir, __FILE__, __LINE__);
