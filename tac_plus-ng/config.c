@@ -2799,7 +2799,7 @@ enum token eval_ruleset_r(tac_session *session, tac_realm *realm, int parent_fir
     return res;
 }
 
-static enum token eval_profile_acl(tac_session *session, tac_profile *p, int parent_first)
+enum token eval_profile_acl(tac_session *session, tac_profile *p, int parent_first)
 {
     enum token res = S_unknown;
     if (!p)

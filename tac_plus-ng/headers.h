@@ -878,7 +878,6 @@ void author(tac_session *, tac_pak_hdr *);
 enum token author_eval_host(tac_session * session, tac_host * h, int parent_first);
 enum token author_eval_profile(tac_session * session, tac_profile * p, int parent_first);
 
-
 /* config.c */
 int cfg_get_enable(tac_session *, struct pwdat **);
 
@@ -901,6 +900,7 @@ void cfg_init(void);
 enum token tac_keycode(char *);
 enum token eval_ruleset(tac_session *, tac_realm *);
 void eval_ruleset_prompt(tac_session *);
+enum token eval_profile_acl(tac_session *session, tac_profile *p, int parent_first);
 
 static __inline__ int minimum(int a, int b)
 {
