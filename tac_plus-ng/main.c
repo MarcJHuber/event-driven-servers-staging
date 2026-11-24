@@ -59,6 +59,13 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+#include <openssl/types.h>
+#include <openssl/evp.h>
+#include <openssl/provider.h>
+OSSL_PROVIDER *ossl_legacy = NULL;
+OSSL_PROVIDER *ossl_default = NULL;
+#endif
 #endif
 
 static const char rcsid[] __attribute__((used)) = "$Id$";
@@ -361,6 +368,10 @@ int main(int argc, char **argv, char **envp)
     cfg_init();
 
     buffer_setsize(0x8000, 0x10);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+    ossl_legacy = OSSL_PROVIDER_load(NULL, "legacy");
+    ossl_default = OSSL_PROVIDER_load(NULL, "default");
+#endif
 
     if (!common_data.io)
 	common_data.io = io_init();

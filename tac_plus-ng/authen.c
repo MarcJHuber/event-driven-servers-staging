@@ -75,14 +75,6 @@
 
 #if defined(WITH_CRYPTO)
 #include "misc/mysha1.h"
-#if OPENSSL_VERSION_NUMBER < 0x30000000
-#else
-#include <openssl/types.h>
-#include <openssl/evp.h>
-#include <openssl/provider.h>
-OSSL_PROVIDER *ossl_legacy = NULL;
-OSSL_PROVIDER *ossl_default = NULL;
-#endif
 #endif
 
 #define DEBAUTHC session, LOG_DEBUG, DEBUG_AUTHEN_FLAG
@@ -2212,10 +2204,6 @@ void authen_init(void)
     li_password_expires = parse_log_format_inline("\"${PASSWORD_EXPIRES}\n\"", __FILE__, __LINE__);
     li_denied_by_acl = parse_log_format_inline("\"${DENIED_BY_ACL}\"", __FILE__, __LINE__);
     li_backend_failed = parse_log_format_inline("\"${BACKEND_FAILED}\"", __FILE__, __LINE__);
-#if OPENSSL_VERSION_NUMBER >= 0x30000000
-    ossl_legacy = OSSL_PROVIDER_load(NULL, "legacy");
-    ossl_default = OSSL_PROVIDER_load(NULL, "default");
-#endif
 }
 
 char *check_client_bug_invalid_remote_address(tac_session *session)
