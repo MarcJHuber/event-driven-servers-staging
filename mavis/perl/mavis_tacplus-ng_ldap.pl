@@ -96,9 +96,14 @@ LDAP_TACMEMBER_MAP_OU
 	Map organizational units from user DN to group membership.
 	Default: unset
 
-USE_STARTTLS
-	If set, the server is required to support start_tls. Do not use this for plain LDAPS.
-	Default: unset
+LDAP_SKIP_STARTTLS
+	0: StartTLS on ldap:// URLs, before any bind. A server without
+	   StartTLS or a failed StartTLS is a backend error.
+	1: no StartTLS on ldap:// URLs; the binds send the passwords in
+	   clear text, and a warning goes to stderr.
+	ldaps:// URLs do not use StartTLS. USE_STARTTLS is no longer
+	needed, because StartTLS is the default.
+	Default: 0
 
 FLAG_FALLTHROUGH
 	If LDAP search fails, try next module (if any). Deprecated.
@@ -153,7 +158,7 @@ my $LDAP_NESTED_GROUP_DEPTH	= undef;
 my $LDAP_SKIP_MEMBEROF		= undef;
 my $LDAP_SKIP_POSIXGROUP	= undef;
 my $LDAP_SKIP_GROUPOFNAMES	= undef;
-my $use_starttls;
+my $skip_starttls		= 0;
 my %tls_options;
 my $LDAP_DEBUG_TIME		= undef;
 
@@ -174,7 +179,10 @@ $LDAP_BASE_POSIXGROUP	= $ENV{'LDAP_BASE_POSIXGROUP'} if exists $ENV{'LDAP_BASE_P
 $LDAP_FILTER		= $ENV{'LDAP_FILTER'} if exists $ENV{'LDAP_FILTER'};
 $LDAP_CONNECT_TIMEOUT	= $ENV{'LDAP_CONNECT_TIMEOUT'} if exists $ENV{'LDAP_CONNECT_TIMEOUT'};
 @LDAP_BIND		= ($ENV{'LDAP_USER'}, password => $ENV{'LDAP_PASSWD'}) if (exists $ENV{'LDAP_USER'} && exists $ENV{'LDAP_PASSWD'});
-$use_starttls		= $ENV{'USE_STARTTLS'} if exists $ENV{'USE_STARTTLS'};
+if (exists $ENV{'LDAP_SKIP_STARTTLS'}) {
+	die "invalid LDAP_SKIP_STARTTLS: '$ENV{'LDAP_SKIP_STARTTLS'}' (0 or 1)\n" unless $ENV{'LDAP_SKIP_STARTTLS'} =~ /^[01]\z/;
+	$skip_starttls = $ENV{'LDAP_SKIP_STARTTLS'};
+}
 $LDAP_MEMBEROF_REGEX	= $ENV{'LDAP_MEMBEROF_REGEX'} if exists $ENV{'LDAP_MEMBEROF_REGEX'};
 $LDAP_MEMBEROF_FILTER	= $ENV{'LDAP_MEMBEROF_FILTER'} if exists $ENV{'LDAP_MEMBEROF_FILTER'};
 $LDAP_TACMEMBER		= $ENV{'LDAP_TACMEMBER'} if exists $ENV{'LDAP_TACMEMBER'};
@@ -367,9 +375,12 @@ retry_once:
 		}
 		my $sock = $ldap->socket();
 		setsockopt($sock, SOL_SOCKET, SO_KEEPALIVE, 1);
-		if (defined $use_starttls) {
+		if ($ldap->scheme eq 'ldap' && $skip_starttls) {
+			print STDERR "the connection to the LDAP server has no TLS: the binds send the passwords in clear text\n";
+		} elsif ($ldap->scheme eq 'ldap') {
 			my $mesg = $ldap->start_tls(%tls_options);
 			if ($mesg->code) {
+				print STDERR "StartTLS: ", $mesg->error, "\n";
 				$V[AV_A_USER_RESPONSE] = "TLS negotiation failed.";
 				debug_timer_stop;
 				# the socket is plain TCP again: do not use it for the next request

@@ -39,6 +39,7 @@ MODULE_DIRS = ("/usr/lib/ldap", "/usr/lib/openldap", "/usr/lib64/openldap", "/us
 LDAPMAVIS = os.path.join(prefix(), "sbin", "ldapmavis-mt")
 LDAP_PERL = os.path.join(prefix(), "lib", "mavis", "mavis_tacplus-ng_ldap.pl")
 LDAP_PERL_OLD = os.path.join(prefix(), "lib", "mavis", "mavis_tacplus_ldap.pl")
+LDAP_PERL_AUTHONLY = os.path.join(prefix(), "lib", "mavis", "mavis_ldap_authonly.pl")
 TACACS_SCHEMA = os.path.join(prefix(), "lib", "mavis", "extra", "tacacs.schema")
 PERL = shutil.which("perl") or "/usr/bin/perl"
 START_TIMEOUT = 10.0
@@ -190,6 +191,16 @@ def person(uid, extra=""):
 def perl_string(value):
     """value as a Perl string literal: TLS_OPTIONS of the Perl back-end is Perl source."""
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def perl_exec(case, script, stderr_log=None):
+    """The exec line of a Perl back-end; stderr_log: a file for its stderr, which MAVIS logs to syslog only."""
+    if not stderr_log:
+        return f'"{PERL}" "perl" "{script}"'
+    name = os.path.basename(stderr_log) + ".sh"
+    wrapper = case.scratch_file(name, f'#!/bin/sh\nexec "{PERL}" "{script}" 2>>"{stderr_log}"\n')
+    os.chmod(wrapper, 0o755)
+    return f'"{wrapper}" "{name}"'
 
 
 def first_existing(paths):
@@ -574,11 +585,17 @@ $module
 """)
 
 
+def setenv(env):
+    """The setenv lines of a "mavis module" block; a value None sets nothing."""
+    return "".join(f'\t\tsetenv {name} = "{value}"\n' for name, value in env.items() if value is not None)
+
+
 class LdapTests:
     """The tests for both back-ends; a subclass sets module(url, extra) to its "mavis module" block.
 
     TRUST and NO_CHECK are the environment variables of the back-end that
     trust a CA file and that turn the check of the server certificate off.
+    STARTTLS is the environment that makes StartTLS mandatory on ldap://.
     """
 
     def ca(self):
@@ -612,7 +629,7 @@ class LdapTests:
         """After a failed StartTLS the back-end does not use the connection again, also if the peer keeps it open."""
         peer = StartTlsPeer()
         self.addCleanup(peer.stop)
-        d = self.start_daemon(POLICY.substitute(module=self.module(peer.url, '\t\tsetenv USE_STARTTLS = "1"\n'),
+        d = self.start_daemon(POLICY.substitute(module=self.module(peer.url, setenv(self.STARTTLS)),
                                                 staff=STAFF, base=BASE, last=WIDE - 1))
         for _ in range(2):
             self.assertEqual(self.login(d), "FAIL")
@@ -631,17 +648,17 @@ class LdapTests:
 
     @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
     def test_starttls_required(self):
-        """USE_STARTTLS: StartTLS before all binds; a server without StartTLS is a backend error."""
+        """STARTTLS: StartTLS before all binds; a server without StartTLS is a backend error."""
         ca = self.ca()
         with self.subTest("StartTLS"):
             # slapd refuses simple binds without TLS
-            slapd, d = self.start(tls=self.ldaps(ca, "security simple_bind=1\n"), starttls=True, USE_STARTTLS="1",
+            slapd, d = self.start(tls=self.ldaps(ca, "security simple_bind=1\n"), starttls=True, **self.STARTTLS,
                                   **self.TRUST(ca.cert))
             self.assert_login(d, "PASS")
             self.assertTrue(slapd.binds())
             self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
         with self.subTest("no StartTLS"):
-            slapd, d = self.start(USE_STARTTLS="1")
+            slapd, d = self.start(**self.STARTTLS)
             self.assert_login(d, "FAIL")
             self.assertEqual(slapd.binds(), [])
 
@@ -658,7 +675,7 @@ class LdapTests:
         """Start slapd (ldif, tls, starttls, root_dse: see slapd()) and the daemon; policy: more daemon lines, env: for
         the back-end."""
         slapd = self.slapd(ldif, tls, starttls, root_dse)
-        extra = "".join(f'\t\tsetenv {name} = "{value}"\n' for name, value in env.items())
+        extra = setenv(env)
         return slapd, self.start_daemon(POLICY.substitute(module=self.module(slapd.url, extra), staff=STAFF,
                                                                             base=BASE, last=WIDE - 1) + policy)
 
@@ -891,6 +908,7 @@ member: cn=xylophone,ou=groups,$base
 class LdapMt(LdapTests, DaemonTestCase):
     CONFIG = None
     NO_CHECK = (("LDAP_OPT_X_TLS_REQUIRE_CERT", "LDAP_OPT_X_TLS_NEVER"),)
+    STARTTLS = {"USE_STARTTLS": "1"}
 
     @staticmethod
     def TRUST(cafile):
@@ -1140,22 +1158,63 @@ class Libldap(unittest.TestCase):
 class LdapPerl(LdapTests, DaemonTestCase):
     CONFIG = None
     NO_CHECK = (("TLS_OPTIONS", "verify => 'none'"),)
+    # StartTLS is mandatory by default; None keeps the LDAP_SKIP_STARTTLS=1 of start() away
+    STARTTLS = {"LDAP_SKIP_STARTTLS": None}
 
     @staticmethod
     def TRUST(cafile):
         return {"TLS_OPTIONS": f"cafile => {perl_string(cafile)}"}
 
-    # with a file name, the back-end runs through a script that writes its stderr there; MAVIS logs it to syslog only
+    # with a file name, the back-end writes its stderr there (see perl_exec())
     stderr_log = None
 
     def module(self, url, extra):
-        exe = f'"{PERL}" "perl" "{LDAP_PERL}"'
-        if self.stderr_log:
-            script = self.scratch_file("perl-ldap.sh",
-                                       f'#!/bin/sh\nexec "{PERL}" "{LDAP_PERL}" 2>>"{self.stderr_log}"\n')
-            os.chmod(script, 0o755)
-            exe = f'"{script}" "perl-ldap.sh"'
-        return MODULE.substitute(module="external", url=url, base=BASE, reader=READER, extra=extra, exec=exe)
+        return MODULE.substitute(module="external", url=url, base=BASE, reader=READER, extra=extra,
+                                 exec=perl_exec(self, LDAP_PERL, self.stderr_log))
+
+    def start(self, ldif="", policy="", tls="", starttls=False, root_dse="by * read", **env):
+        """LdapTests.start(); a slapd without TLS gets LDAP_SKIP_STARTTLS=1, unless env sets it (None: not set)."""
+        if not tls:
+            env.setdefault("LDAP_SKIP_STARTTLS", "1")
+        return super().start(ldif, policy, tls, starttls, root_dse, **env)
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_starttls_by_default(self):
+        """ldap://: StartTLS before all binds, also if the root DSE does not show StartTLS.
+
+        A failed StartTLS is a backend error, and no bind follows (no StartTLS: see test_starttls_required).
+        """
+        ca = self.ca()
+        refuse_clear = self.ldaps(ca, "security simple_bind=1\n")  # slapd refuses simple binds without TLS
+        for root_dse in ("by * read", "by * none"):
+            with self.subTest(root_dse=root_dse):
+                slapd, d = self.start(tls=refuse_clear, starttls=True, root_dse=root_dse, **self.TRUST(ca.cert))
+                self.assert_login(d, "PASS")
+                self.assertTrue(slapd.binds())
+                self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
+        with self.subTest("CA not trusted"):
+            slapd, d = self.start(tls=refuse_clear, starttls=True)
+            for _ in range(2):  # the second request does not bind on the connection of the first one
+                self.assert_login(d, "FAIL")
+            self.assertEqual(slapd.binds(), [])
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_skip_starttls(self):
+        """LDAP_SKIP_STARTTLS=1: the binds in clear text and a warning on stderr; ldaps:// keeps TLS, no warning."""
+        self.stderr_log = self.scratch_file("skip.log", "")
+        slapd, d = self.start(LDAP_SKIP_STARTTLS="1")
+        self.assert_login(d, "PASS")
+        self.assertIn((READER, False), slapd.binds())
+        with open(self.stderr_log, errors="replace") as f:
+            self.assertIn(CLEAR_TEXT_WARNING, f.read())
+        ca = self.ca()
+        self.stderr_log = self.scratch_file("ldaps.log", "")
+        slapd, d = self.start(tls=self.ldaps(ca), LDAP_SKIP_STARTTLS="1", **self.TRUST(ca.cert))
+        self.assert_login(d, "PASS")
+        self.assertTrue(slapd.binds())
+        self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
+        with open(self.stderr_log, errors="replace") as f:
+            self.assertNotIn(CLEAR_TEXT_WARNING, f.read())
 
     def test_ad_root_dse(self):
         """The root DSE of AD: the server type is microsoft, and its default filter (sAMAccountName) finds alice."""
@@ -1164,7 +1223,8 @@ class LdapPerl(LdapTests, DaemonTestCase):
         peer.down = False
         module = (f'\tmavis module = external {{\n\t\tsetenv LDAP_HOSTS = "{peer.url}"\n'
                   f'\t\tsetenv LDAP_BASE = "{BASE}"\n\t\tsetenv LDAP_USER = "{READER}"\n'
-                  f'\t\tsetenv LDAP_PASSWD = "readerpw"\n\t\texec = "{PERL}" "perl" "{LDAP_PERL}"\n\t}}\n')
+                  f'\t\tsetenv LDAP_PASSWD = "readerpw"\n\t\tsetenv LDAP_SKIP_STARTTLS = "1"\n'
+                  f'\t\texec = "{PERL}" "perl" "{LDAP_PERL}"\n\t}}\n')
         d = self.start_daemon(module + "\tuser backend = mavis\n\tpap backend = mavis\n"
                                        "\truleset { rule everyone { script { permit } } }\n")
         self.assertEqual(self.login(d), "PASS")
@@ -1204,6 +1264,7 @@ class LdapPerlNoRootDse(DaemonTestCase):
 		setenv LDAP_USER = "{READER}"
 		setenv LDAP_PASSWD = "readerpw"
 		setenv FLAG_CHPW = "1"
+		setenv LDAP_SKIP_STARTTLS = "1"
 		exec = "{PERL}" "perl" "{LDAP_PERL_OLD}"
 	}}
 	user backend = mavis
@@ -1227,6 +1288,7 @@ MODULE_OLD = string.Template("""
 		setenv LDAP_BASE = "$base"
 		setenv LDAP_USER = "$reader"
 		setenv LDAP_PASSWD = "readerpw"
+		setenv LDAP_SKIP_STARTTLS = "1"
 $extra		childs min = 1
 		childs max = 1
 		exec = "$perl" "perl" "$script"
@@ -1295,6 +1357,7 @@ class LdapPerlGeneric(DaemonTestCase):
 		setenv LDAP_BASE = "{BASE}"
 		setenv LDAP_USER = "{READER}"
 		setenv LDAP_PASSWD = "readerpw"
+		setenv LDAP_SKIP_STARTTLS = "1"
 		exec = "{PERL}" "perl" "{LDAP_PERL_OLD}"
 	}}
 	user backend = mavis
@@ -1305,6 +1368,151 @@ class LdapPerlGeneric(DaemonTestCase):
                                        ("heidi", "heidipw", "FAIL")):
             with self.subTest(user=user, password=password), d.connect() as c:
                 self.assertEqual(c.pap(user, password).status_name, status)
+
+
+def new_slapd(case, **args):
+    """A running slapd for a test that does not use LdapTests; args: see Slapd."""
+    slapd = Slapd(tempfile.mkdtemp(prefix="slapd-", dir=os.path.dirname(case.scratch_file("slapd", ""))), **args)
+    case.addCleanup(slapd.stop)
+    slapd.start()
+    return slapd
+
+
+@unittest.skipUnless(os.access(SLAPD, os.X_OK), "no OpenLDAP slapd")
+@unittest.skipUnless(perl_ldap(), "no Net::LDAP or IO::Socket::SSL for Perl")
+class LdapPerlOldStartTls(DaemonTestCase):
+    """mavis_tacplus_ldap.pl with LDAP_SERVER_TYPE = generic: StartTLS on ldap:// URLs."""
+
+    CONFIG = None
+
+    def start(self, url, stderr_log=None, **env):
+        """The daemon with mavis_tacplus_ldap.pl on url; stderr_log: see perl_exec(), env: for the back-end."""
+        extra = "".join(f'\t\tsetenv {name} = "{value}"\n' for name, value in env.items())
+        return self.start_daemon(f"""
+	mavis module = external {{
+		setenv LDAP_SERVER_TYPE = "generic"
+		setenv LDAP_HOSTS = "{url}"
+		setenv LDAP_BASE = "{BASE}"
+		setenv LDAP_USER = "{READER}"
+		setenv LDAP_PASSWD = "readerpw"
+		setenv FLAG_CHPW = "1"
+{extra}		exec = {perl_exec(self, LDAP_PERL_OLD, stderr_log)}
+	}}
+	user backend = mavis
+	login backend = mavis chpass
+	pap backend = mavis
+	authentication fallback = permit
+	user rescue {{
+		fallback-only
+		password pap = clear rescuepw
+	}}
+	ruleset {{ rule {{ script {{ permit }} }} }}
+""")
+
+    def assert_login(self, d, status):
+        """alice gets status; the fallback-only user can log in only if it is the backend error (FAIL)."""
+        with d.connect() as c:
+            self.assertEqual(c.pap("alice", "alicepw").status_name, status)
+        with d.connect() as c:
+            self.assertEqual(c.pap("rescue", "rescuepw").status_name, "PASS" if status == "FAIL" else "FAIL")
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_starttls_by_default(self):
+        """StartTLS before all binds, also on the new connection of a password change; no StartTLS: backend error."""
+        ca = LdapTests.ca(self)
+        with self.subTest("StartTLS"):
+            slapd = new_slapd(self, tls=LdapTests.ldaps(ca, "security simple_bind=1\n"), starttls=True)
+            d = self.start(slapd.url)
+            self.assert_login(d, "PASS")
+            with d.connect() as c:
+                r = c.ascii_login("carol", "", data=["carolpw", "newpw", "newpw"])
+            self.assertEqual(r.statuses, ["GETPASS", "GETDATA", "GETDATA", "GETDATA", "PASS"], r)
+            with d.connect() as c:
+                self.assertEqual(c.pap("carol", "newpw").status_name, "PASS")
+            self.assertIn(("uid=carol,ou=people," + BASE, True), slapd.binds())
+            self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
+        with self.subTest("no StartTLS"):
+            slapd = new_slapd(self)
+            self.assert_login(self.start(slapd.url), "FAIL")
+            self.assertEqual(slapd.binds(), [])
+
+    def test_skip_starttls(self):
+        """LDAP_SKIP_STARTTLS=1: the binds in clear text, and a warning on stderr."""
+        log = self.scratch_file("perl-ldap-old.log", "")
+        slapd = new_slapd(self)
+        self.assert_login(self.start(slapd.url, log, LDAP_SKIP_STARTTLS="1"), "PASS")
+        self.assertIn((READER, False), slapd.binds())
+        with open(log, errors="replace") as f:
+            self.assertIn(CLEAR_TEXT_WARNING, f.read())
+
+    def test_failed_starttls_stops_the_connection(self):
+        """After a failed StartTLS the next request makes a new connection, also with FLAG_CACHE_CONNECTION."""
+        peer = StartTlsPeer()
+        self.addCleanup(peer.stop)
+        d = self.start(peer.url, FLAG_CACHE_CONNECTION="1")
+        for _ in range(2):
+            self.assert_login(d, "FAIL")
+        self.assertGreaterEqual(peer.hellos, 2)
+        self.assertEqual(peer.after_failure, [])
+
+
+@unittest.skipUnless(os.access(SLAPD, os.X_OK), "no OpenLDAP slapd")
+@unittest.skipUnless(perl_ldap(), "no Net::LDAP or IO::Socket::SSL for Perl")
+class LdapPerlAuthOnly(DaemonTestCase):
+    """mavis_ldap_authonly.pl, through its standard input and output: StartTLS on ldap:// URLs."""
+
+    CONFIG = None
+
+    def results(self, url, count=1, **env):
+        """The AV_A_RESULT of count logins of alice in one back-end process, and its stderr; env: for the back-end."""
+        env = {**os.environ, "LDAP_HOSTS": url, "LDAP_BASE": BASE, "LDAP_USER": READER, "LDAP_PASSWD": "readerpw",
+               **env}
+        p = subprocess.run([PERL, LDAP_PERL_AUTHONLY], input=b"4 alice\n8 alicepw\n49 AUTH\n=\n" * count,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=60, check=False)
+        replies = p.stdout.decode().split("\n=")[:-1]
+        return [dict(re.findall(r"(?m)^(\d+) (.*)$", r)).get("6") for r in replies], p.stderr.decode()
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_starttls_by_default(self):
+        """StartTLS before all binds; a server without StartTLS is a backend error, and no bind follows."""
+        ca = LdapTests.ca(self)
+        slapd = new_slapd(self, tls=LdapTests.ldaps(ca, "security simple_bind=1\n"), starttls=True)
+        self.assertEqual(self.results(slapd.url)[0], ["ACK"])
+        self.assertTrue(slapd.binds())
+        self.assertEqual([dn for dn, over_tls in slapd.binds() if not over_tls], [])
+        slapd = new_slapd(self)
+        self.assertEqual(self.results(slapd.url)[0], ["ERR"])
+        self.assertEqual(slapd.binds(), [])
+
+    def test_skip_starttls(self):
+        """LDAP_SKIP_STARTTLS=1: the binds in clear text, and a warning on stderr."""
+        slapd = new_slapd(self)
+        results, stderr = self.results(slapd.url, LDAP_SKIP_STARTTLS="1")
+        self.assertEqual(results, ["ACK"])
+        self.assertIn((READER, False), slapd.binds())
+        self.assertIn(CLEAR_TEXT_WARNING, stderr)
+
+    def test_failed_starttls_stops_the_connection(self):
+        """After a failed StartTLS the next request makes a new connection, also with FLAG_CACHE_CONNECTION."""
+        peer = StartTlsPeer()
+        self.addCleanup(peer.stop)
+        self.assertEqual(self.results(peer.url, 2, FLAG_CACHE_CONNECTION="1")[0], ["ERR", "ERR"])
+        self.assertGreaterEqual(peer.hellos, 2)
+        self.assertEqual(peer.after_failure, [])
+
+
+@unittest.skipUnless(perl_ldap(), "no Net::LDAP or IO::Socket::SSL for Perl")
+class PerlSkipStartTlsValue(unittest.TestCase):
+    def test_invalid_value(self):
+        """LDAP_SKIP_STARTTLS other than 0 or 1: the Perl back-ends do not start."""
+        for script in (LDAP_PERL, LDAP_PERL_OLD, LDAP_PERL_AUTHONLY):
+            for value in ("", "yes", "2"):
+                with self.subTest(script=os.path.basename(script), value=value):
+                    env = {**os.environ, "LDAP_HOSTS": "ldap://127.0.0.1:1", "LDAP_SKIP_STARTTLS": value}
+                    p = subprocess.run([PERL, script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.PIPE, env=env, timeout=60, check=False)
+                    self.assertNotEqual(p.returncode, 0)
+                    self.assertIn(f"invalid LDAP_SKIP_STARTTLS: '{value}' (0 or 1)", p.stderr.decode())
 
 
 if __name__ == "__main__":
