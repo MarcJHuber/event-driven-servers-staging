@@ -39,6 +39,7 @@
 
 #include "headers.h"
 #include "misc/md5crypt.h"
+#include <crypt.h>
 #include <utime.h>
 
 static const char rcsid[] __attribute__((used)) = "$Id$";
@@ -456,26 +457,36 @@ static void mavis_lookup_final(tac_session *session, av_ctx *avc)
 
 	if (!strcmp(session->mavis_data->mavistype, AV_V_TACTYPE_AUTH) || !strcmp(session->mavis_data->mavistype, AV_V_TACTYPE_CHPW)) {
 	    session->mavisauth_res = S_permit;
-#if 0
 	    if (u->dynamic && (TRISTATE_YES != u->chalresp) && session->password && !u->passwd_oneshot) {
 		char *pass = session->password_new ? session->password_new : session->password;
-		char *crypt, salt[13];
+
+		// try to hash the password with SHA-512 ...
+		char *hash;
+	        char salt[21];
 		salt[0] = '$';
-		salt[1] = '1';
+		salt[1] = '6';
 		salt[2] = '$';
-		for (int i = 3; i < 11; i++)
-		    salt[i] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"[arc4random_uniform(64)];
-		salt[11] = '$';
-		salt[12] = 0;
-		crypt = md5crypt(pass, salt);
-		size_t crypt_len = strlen(crypt);
-		u->passwd[PW_MAVIS] = mem_alloc(u->mem, sizeof(struct pwdat) + crypt_len);
-		memcpy(u->passwd[PW_MAVIS]->value, crypt, crypt_len);
-		u->passwd[PW_MAVIS]->value[crypt_len] = 0;
+		for (int i = 3; i < 19; i++)
+		     salt[i] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"[arc4random_uniform(64)];
+		salt[19] = '$';
+		salt[20] = 0;
+		hash = crypt(pass, salt);
+
+		if (!hash) {
+		    // ... but fall back to MD5 if that doesn't work.
+		    salt[1] = '1';
+		    salt[11] = '$';
+		    salt[12] = 0;
+		    hash = md5crypt(pass, salt);
+		}
+
+		size_t hash_len = strlen(hash);
+		u->passwd[PW_MAVIS] = mem_alloc(u->mem, sizeof(struct pwdat) + hash_len);
+		memcpy(u->passwd[PW_MAVIS]->value, hash, hash_len);
+		u->passwd[PW_MAVIS]->value[hash_len] = 0;
 		u->passwd[PW_MAVIS]->type = S_crypt;
 		u->passwd[session->mavis_data->pw_ix] = u->passwd[PW_MAVIS];
 	    }
-#endif
 	}
     } else if (result && !strcmp(result, AV_V_RESULT_ERROR)) {
 	session->mavisauth_res = S_error;
