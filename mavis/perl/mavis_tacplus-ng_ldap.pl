@@ -110,6 +110,8 @@ FLAG_AUTHORIZE_ONLY
 TLS_OPTIONS
 	Extra options for use with LDAPS or start_tls, in Perl hash syntax.
 	See https://metacpan.org/pod/Net::LDAP for details.
+	The server certificate is checked ("verify => 'require'") unless
+	TLS_OPTIONS sets "verify"; "cafile => '/path/to/ca.pem'" names the CA.
 	Default: unset
 	Example: "sslversion => 'tlsv1_2'"
 
@@ -155,7 +157,8 @@ my $use_starttls;
 my %tls_options;
 my $LDAP_DEBUG_TIME		= undef;
 
-%tls_options = eval $ENV{'TLS_OPTIONS'} if exists $ENV{'TLS_OPTIONS'};
+# check the certificate of the server unless TLS_OPTIONS says otherwise, e.g. "verify => 'none'"
+%tls_options = (verify => 'require', exists $ENV{'TLS_OPTIONS'} ? eval $ENV{'TLS_OPTIONS'} : ());
 
 @$LDAP_HOSTS		= split /\s+/, $ENV{'LDAP_HOSTS'} if exists $ENV{'LDAP_HOSTS'};
 $LDAP_SCOPE		= $ENV{'LDAP_SCOPE'} if exists $ENV{'LDAP_SCOPE'};
@@ -369,6 +372,9 @@ retry_once:
 			if ($mesg->code) {
 				$V[AV_A_USER_RESPONSE] = "TLS negotiation failed.";
 				debug_timer_stop;
+				# the socket is plain TCP again: do not use it for the next request
+				$ldap->disconnect;
+				$ldap = undef;
 				goto fatal;
 			}
 		}
@@ -536,7 +542,7 @@ retry_once:
 				);
 				my $m = $mesg->error;
 				$m =~ s/.*DSID-.*, data ([0-9A-Fa-f]+),.*/$1/;
-				if($caller_cap_chpw && ($m eq "532" || $m eq "533" || $m eq "773")) {
+				if($caller_cap_chpw && ($m eq "532" || $m eq "773")) {
 					$code = 0;
 					$V[AV_A_PASSWORD_MUSTCHANGE] = 1;
 				} elsif (exists $ad_error_codes{$m}) {

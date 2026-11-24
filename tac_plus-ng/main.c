@@ -329,7 +329,7 @@ static void periodics_ctx(struct context *ctx, int cur __attribute__((unused)))
 	tac_session *s = RB_payload(rbn, tac_session *);
 	rbnext = RB_next(rbn);
 	if (s->session_timeout < io_now.tv_sec)
-	    cleanup_session(s);
+	    cleanup_session(s, 0);
     }
 
     tac_script_expire_exec_context(ctx);
@@ -460,7 +460,7 @@ static str_t msgid_ ## A = { .txt = B, .len = sizeof(B) - 1 }
 
     for (rb_node_t * u, *t = RB_first(ctx->sessions); t; t = u) {
 	u = RB_next(t);
-	cleanup_session(RB_payload(t, tac_session *));
+	cleanup_session(RB_payload(t, tac_session *), 0);
     }
 
     if (ctx->sessions)
@@ -1673,6 +1673,29 @@ static void set_ctx_info(struct context *ctx, struct scm_data_accept_ext *sd_ext
 	str_set(&ctx->vrf, mem_strndup(ctx->mem, (u_char *) sd_ext->vrf, sd_ext->vrf_len), 0);
 }
 
+#ifdef WITH_SSL
+// the realm decides, or else "tls = auto" on the listener
+static int tls_autodetect_on(tac_realm *r, u_int sd_flags)
+{
+    return r->tls_autodetect == TRISTATE_YES || (r->tls_autodetect == TRISTATE_DUNNO && (sd_flags & SCM_FLAG_TLSAUTO));
+}
+
+// the DTLS versions of auto-detection on a listener that names none; none without a DTLS context
+static u_int dtls_autodetect_versions(tac_realm *r)
+{
+    if (!r->dtls)
+	return 0;
+    u_int versions = DTLS1_VERSION & 0xff;
+    versions <<= 8;
+    versions |= DTLS1_2_VERSION & 0xff;
+#ifdef DTLS1_3_VERSION
+    versions <<= 8;
+    versions |= DTLS1_3_VERSION & 0xff;
+#endif
+    return versions;
+}
+#endif
+
 static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, sockaddr_union *device_addr, u_char *inject_buf, size_t inject_len)
 {
     fcntl(s, F_SETFD, FD_CLOEXEC);
@@ -1739,24 +1762,15 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 
     context_lru_append(ctx);
 #ifdef WITH_SSL
-    ctx->tls_autodetect = ctx->realm->tls_autodetect;
-    if (ctx->tls_autodetect == TRISTATE_DUNNO && sd_ext->sd.flags & SCM_FLAG_TLSAUTO)
-	ctx->tls_autodetect = TRISTATE_YES;
+    ctx->tls_autodetect = tls_autodetect_on(ctx->realm, sd_ext->sd.flags) ? TRISTATE_YES : ctx->realm->tls_autodetect;
     ctx->tls_versions = sd_ext->sd.tls_versions;
     if ((ctx->tls_autodetect == TRISTATE_YES) && !ctx->tls_versions) {
 	if (ctx->realm->tls && sd_ext->sd.type == SCM_ACCEPT) {
 	    ctx->tls_versions = TLS1_2_VERSION & 0xff;
 	    ctx->tls_versions <<= 8;
 	    ctx->tls_versions |= TLS1_3_VERSION & 0xff;
-	} else if (ctx->realm->dtls && sd_ext->sd.type == SCM_UDPDATA) {
-	    ctx->tls_versions = DTLS1_VERSION & 0xff;
-	    ctx->tls_versions <<= 8;
-	    ctx->tls_versions |= DTLS1_2_VERSION & 0xff;
-#ifdef DTLS1_3_VERSION
-	    ctx->tls_versions <<= 8;
-	    ctx->tls_versions |= DTLS1_3_VERSION & 0xff;
-#endif
-	}
+	} else if (sd_ext->sd.type == SCM_UDPDATA)
+	    ctx->tls_versions = dtls_autodetect_versions(ctx->realm);
     }
     if (ctx->tls_versions && ctx->tls_autodetect != TRISTATE_YES) {
 	ctx->use_tls = (sd_ext->sd.type == SCM_ACCEPT) ? BISTATE_YES : BISTATE_NO;
@@ -1771,13 +1785,8 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 	ctx->inject_len = inject_len;
     }
 
-    if (ctx->use_tls == BISTATE_NO) {
-	if (h) {
-	    if (!h->key)
-		ctx->hint = "no encryption key found";
-	} else
-	    ctx->hint = "host unknown";
-    }
+    if (ctx->use_tls == BISTATE_NO && h && !h->key)
+	ctx->hint = "no encryption key found";
 
     str_set(&ctx->peer_addr_ascii, mem_strdup(ctx->mem, su_ntoa(&peer, buf, sizeof(buf)) ? buf : "<unknown>"), 0);
     snprintf(buf, sizeof(buf), "%u", su_get_port(&peer));
@@ -1796,6 +1805,12 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
     ctx->host = h;
 
     set_ctx_info(ctx, sd_ext);
+
+    // TLS, PSK and the MAVIS device lookup all need the device of the address
+    if (!ctx->host) {
+	reject_conn(ctx, "host unknown", __func__, __LINE__);
+	return;
+    }
 
     complete_host_mavis(ctx);
 }
@@ -1823,8 +1838,7 @@ static void complete_host_mavis(struct context *ctx)
 	return;
     }
 
-    if (ctx->host)
-	ctx->key = ctx->host->key;
+    ctx->key = ctx->host->key;
 
 #ifdef WITH_SSL
     io_set_cb_i(ctx->io, ctx->sock, (void *) accept_control_check_tls);
@@ -1890,6 +1904,16 @@ static int dtls_ver_ok(u_int ver, u_char v)
 	if ((ver & 0xff) == v)
 	    return -1;
     return 0;
+}
+
+#define TLS_PEEK_LEN 6		// what accept_control_check_tls() reads of a record
+
+// 0x16 (handshake) or 0x17 (application data): a DTLS record of one of the versions, else 0
+static int dtls_record_type(u_int versions, u_char *buf, size_t len)
+{
+    if (len < TLS_PEEK_LEN || (buf[0] != 0x16 && buf[0] != 0x17) || buf[1] != 0xfe || !dtls_ver_ok(versions, buf[2]))
+	return 0;
+    return buf[0];
 }
 #endif
 
@@ -2013,9 +2037,10 @@ static void get_tls13_hello_identifier(u_char *buf, size_t buf_len, char **ident
 #ifdef WITH_SSL
 static void accept_control_check_tls(struct context *ctx, int cur __attribute__((unused)))
 {
-    u_char tmp[6];
+    u_char tmp[TLS_PEEK_LEN];
     if (recv_inject(ctx, tmp, sizeof(tmp), MSG_PEEK, NULL) == (ssize_t) sizeof(tmp)) {
-	if (ctx->udp && tmp[0] == 0x17 && tmp[1] == 0xfe && dtls_ver_ok(ctx->tls_versions, tmp[2])) {
+	int dtls = ctx->udp ? dtls_record_type(ctx->tls_versions, tmp, sizeof(tmp)) : 0;
+	if (dtls == 0x17) {
 	    // DTLS Application Data, but we haven't seen the handshake, possibly due to a daemon
 	    // restart. Just return some junk data back , the peer is likely to retry with a new handshake.
 	    char junk[128] = { 0 };
@@ -2025,7 +2050,7 @@ static void accept_control_check_tls(struct context *ctx, int cur __attribute__(
 	}
 	if (ctx->tls_autodetect == TRISTATE_YES && tmp[0] == 0x16) {
 	    if (ctx->udp)
-		ctx->use_dtls = (tmp[1] == 0xfe && dtls_ver_ok(ctx->tls_versions, tmp[2])) ? BISTATE_YES : BISTATE_NO;
+		ctx->use_dtls = (dtls == 0x16) ? BISTATE_YES : BISTATE_NO;
 	    else
 		ctx->use_tls = (tmp[1] == 0x03 && tmp[2] == 0x01 && tmp[5] == 1) ? BISTATE_YES : BISTATE_NO;
 	}
@@ -2136,6 +2161,11 @@ static void accept_control_check_tls_final(struct context *ctx)
 		mem_free(ctx->mem, &ctx->inject_buf);
 	    }
 	}
+	if (!ctx->tls) {	// "tls psk = yes" without a certificate, and no PSK in the handshake
+	    report(NULL, LOG_ERR, ~0, "%s: no TLS context for realm %s", __func__, ctx->realm->name.txt);
+	    cleanup(ctx, ctx->sock);
+	    return;
+	}
 	accept_control_tls(ctx, ctx->sock);
 	return;
     }
@@ -2201,6 +2231,20 @@ static void accept_control_final(struct context *ctx)
     tac_read(ctx, ctx->sock);
 }
 
+// A DTLS record has no RADIUS length field: decide as accept_control_common() and accept_control_check_tls() do.
+static int udp_is_dtls(struct scm_data_udp *sd __attribute__((unused)), tac_realm *r __attribute__((unused)))
+{
+#ifdef WITH_SSL
+    if (!tls_autodetect_on(r, sd->flags))
+	return sd->tls_versions != 0;
+    if (!r->dtls && !r->use_tls_psk)	// accept_control_check_tls_final() refuses DTLS here
+	return 0;
+    return dtls_record_type(sd->tls_versions ? sd->tls_versions : dtls_autodetect_versions(r), sd->data, sd->data_len) != 0;
+#else
+    return 0;
+#endif
+}
+
 static void accept_control(struct context *ctx, int cur)
 {
     int s = -1;
@@ -2235,10 +2279,10 @@ static void accept_control(struct context *ctx, int cur)
     case SCM_UDPDATA:
 	if (rad_dict_initialized()) {
 	    rad_pak_hdr *hdr = (rad_pak_hdr *) (&u.sd_udp.data);
-	    if (u.sd_udp.data_len == ntohs(hdr->length)) {
-		sd_ext.sd_udp = u.sd_udp;
+	    sd_ext.sd_udp = u.sd_udp;
+	    set_sd_realm(s, &sd_ext);
+	    if (u.sd_udp.data_len == ntohs(hdr->length) || udp_is_dtls(&u.sd_udp, sd_ext.realm)) {
 		users_inc();
-		set_sd_realm(s, &sd_ext);
 		accept_control_common(s, &sd_ext, NULL, u.sd_udp.data, u.sd_udp.data_len);
 		return;
 	    }

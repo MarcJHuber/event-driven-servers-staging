@@ -13,6 +13,11 @@ static inline str_t *str_set(str_t *str, char *txt, size_t len)
 {
 	str->txt = txt;
 	str->len = len ? len : (txt ? strlen(txt) : 0);
+	if (len) {
+	    size_t i = 0;
+	    for (; i < len && txt[i]; i++);
+	    str->len = i;
+	}
 	return str;
 }
 #endif
