@@ -335,12 +335,18 @@ static void do_author(tac_session *session)
     if (session->profile)
 	session->debug |= session->profile->debug;
 
-    report(DEBAUTHZ, "user '%s' found", session->username.txt);
+    if (session->user)
+	report(DEBAUTHZ, "user '%s' found", session->username.txt);
+    else
+	report(DEBAUTHZ, "user '%s' pre-authenticated by device", session->username.txt);
 
     if (session->authorized)
 	res = S_permit;
     else {
-	res = eval_ruleset(session, session->ctx->realm);
+	if (session->profile && session->profile->acl)
+	    res = eval_profile_acl(session, session->profile, session->ctx->realm->script_realm_parent_first);
+	else
+	    res = eval_ruleset(session, session->ctx->realm);
 	if (res == S_permit)
 	    res = author_eval_profile(session, session->profile, session->ctx->realm->script_profile_parent_first);
     }
