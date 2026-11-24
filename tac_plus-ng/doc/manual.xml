@@ -2593,6 +2593,7 @@ tacacs-server host 192.168.0.1 single-connection key your key here</screen>
                 passwords, to use the <emphasis>login</emphasis> password, or
                 to permit (without password) or refuse any enable attempt.
                 <emphasis>level</emphasis> defaults to 15.</para>
+            <para><literal>error</literal> rejects the enable attempt with a TACACS+ error status. This will likely instruct your device to fall back to its local enable password.</para>
             <para>Enable passwords specified at device level have a lower
                 precedence as those defined at user or profile level.</para>
             <note>
@@ -3888,7 +3889,7 @@ user marc {
         <listitem>
           <para><literal>enable</literal> [ <emphasis>level</emphasis> ]
               <literal> = </literal> ( <literal>permit</literal> |
-              <literal>deny</literal> | <literal>login</literal> | (
+              <literal>deny</literal> | <literal>error</literal> | <literal>login</literal> | (
                 <literal>clear</literal> | <literal>crypt</literal> | <literal>pbkdf2</literal> | <literal>asa</literal> | <literal>4</literal> | <literal>5</literal> | <literal>6</literal> | <literal>7</literal> | <literal>8</literal> | <literal>9</literal> )
               <emphasis>password</emphasis> )</para>
           <para>This directive may be used to set user specific enable
@@ -3896,6 +3897,7 @@ user marc {
               permit (without password) or refuse any enable attempt. Enable
               secrets defined at user level have precedence over those defined
               at device level. <emphasis>level</emphasis> defaults to 15.</para>
+          <para><literal>error</literal> rejects the enable attempt with a TACACS+ error status. This will likely instruct your device to fall back to its local enable password.</para>
           <para>The default privilege level for an ordinary user on the
               NAS is usually 1. When a user enables, she can reset this level
               to a value between 0 and 15 by using the NAS

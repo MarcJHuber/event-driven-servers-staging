@@ -654,14 +654,20 @@ int query_mavis_dacl(tac_session *session, void (*f)(tac_session *))
 
 static enum token check_access(tac_session * session, struct pwdat *pwdat, char *passwd, enum hint_enum *hint, char **resp);
 
-static int refuse_tac_session(tac_session *session, char *info, enum pw_ix pw_ix)
+// a password "error" refuses the session with a TACACS+ ERROR
+static int refuse_error_password(tac_session *session, char *info, struct pwdat *pwdat)
 {
-    if (session->user && session->user->passwd[pw_ix]->type == S_error) {
+    if (pwdat && pwdat->type == S_error) {
 	report_auth(session, info, hint_error, S_deny);
 	send_authen_error(session, "Handling refused.");
 	return -1;
     }
     return 0;
+}
+
+static int refuse_tac_session(tac_session *session, char *info, enum pw_ix pw_ix)
+{
+    return session->user ? refuse_error_password(session, info, session->user->passwd[pw_ix]) : 0;
 }
 
 static int refuse_rad_session(tac_session *session, char *info, enum pw_ix pw_ix)
@@ -1203,6 +1209,8 @@ static void do_enable_augmented(tac_session *session)
 	    return;
 
 	cfg_get_enable(session, &session->enable);
+	if (refuse_error_password(session, info, session->enable))
+	    return;
 
 	if (session->enable) {
 	    if (session->enable->type == S_login)
@@ -1257,6 +1265,8 @@ static void do_enable(tac_session *session)
 
     if (!session->enable)
 	cfg_get_enable(session, &session->enable);
+    if (refuse_error_password(session, info, session->enable))
+	return;
 
     if (session->enable && session->enable_getuser && (session->enable->type == S_permit))
 	res = S_permit;
