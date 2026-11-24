@@ -243,8 +243,7 @@ class SilentUnknownDevice(DaemonTestCase):
     def test_rejected_at_once(self):
         known = self.connect(single_connect=True)
         self.assertTrue(known.pap("alice", "alicepw").ok)
-        unknown = self.connect(source="127.0.0.77")
-        self.assertTrue(unknown.closed(timeout=5), "the connection of no device is still open")
+        self.assertRejected(source="127.0.0.77", timeout=5.0, msg="the connection of no device is still open")
         self.assertTrue(known.pap("alice", "alicepw").ok, "the worker lost the connection of the device")
 
 

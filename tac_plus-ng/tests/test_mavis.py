@@ -556,12 +556,7 @@ class Type6HostProfile(DaemonTestCase):
         self.assertEqual(self.connect(source="127.0.0.6", key="naskey").pap("alice", "alicepw").status_name, "PASS")
 
     def test_type6_value_the_profile_key_cannot_decrypt_rejects_the_host(self):
-        # reject_conn() resets the connection before the client sends: the reset can come before connect() returns
-        try:
-            c = self.connect(source="127.0.0.7")
-        except ConnectionResetError:
-            return
-        self.assertTrue(c.closed(), "the daemon accepted the host")
+        self.assertRejected(source="127.0.0.7", msg="the daemon accepted the host")
 
 
 @unittest.skipUnless("openssl" in features(), "type 6 needs a build with OpenSSL")

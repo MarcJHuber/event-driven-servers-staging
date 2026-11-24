@@ -258,10 +258,8 @@ class DeviceAddressFromOwnRealmHostsFile(DaemonTestCase):
 """ % (parent_hosts, lab_hosts), listen={"lab": "realm = lab"})
         with d.connect(listener="lab", source="127.0.0.10", key="naskey") as c:
             self.assertEqual(c.pap("alice", "alicepw").status_name, "PASS")
-        c = d.connect(listener="lab", source="127.0.0.9", key="naskey", timeout=10.0)
-        self.addCleanup(c.close)
-        with self.assertRaises((tacacs.Closed, ConnectionError)):
-            c.pap("alice", "alicepw")
+        self.assertRejected(daemon=d, listener="lab", source="127.0.0.9", key="naskey", timeout=10.0,
+                            request=tacacs.Packet.authen_start(user="alice"))
 
 
 @unittest.skipUnless(LINUX, "127.0.0.0/8 local addresses")
