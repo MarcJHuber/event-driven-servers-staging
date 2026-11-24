@@ -88,6 +88,10 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509_vfy.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+#include <openssl/ui.h>
+#include <openssl/store.h>
+#endif
 #include "type6.h"
 #endif
 
@@ -2276,6 +2280,29 @@ void parse_decls_real(struct sym *sym, tac_realm *r)
 		    parse_error_expect(sym, S_id, S_key, S_key_exchange, S_dhe_supported_groups, S_equal, S_unknown);
 		}
 		continue;
+#endif
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+	    case S_pkcs11_pin:
+		sym_get(sym);
+		parse(sym, S_equal);
+		r->tls_pkcs11_pin = strdup(sym->buf);
+		sym_get(sym);
+		config.pkcs11 = 1;
+		break;
+	    case S_pkcs11_cert_uri:
+		sym_get(sym);
+		parse(sym, S_equal);
+		r->tls_pkcs11_cert_uri = strdup(sym->buf);
+		sym_get(sym);
+		config.pkcs11 = 1;
+		break;
+	    case S_pkcs11_key_uri:
+		sym_get(sym);
+		parse(sym, S_equal);
+		r->tls_pkcs11_key_uri = strdup(sym->buf);
+		sym_get(sym);
+		config.pkcs11 = 1;
+		break;
 #endif
 	    case S_crldir:
 		sym_get(sym);
@@ -6650,6 +6677,76 @@ static int alpn_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen, c
     return SSL_TLSEXT_ERR_OK;
 }
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+static int ui_read_pin(UI *ui, UI_STRING *uis) {
+    if (UI_get_string_type(uis) == UIT_PROMPT) {
+	struct realm *r = (struct realm *) UI_get0_user_data(ui);
+	if (r && r->tls_pkcs11_pin) {
+	    UI_set_result(ui, uis, r->tls_pkcs11_pin);
+	    return 1;
+	}
+    }
+    return 0;
+}
+
+X509 *load_cert_from_token(const char *pkcs11_uri, UI_METHOD *ui_method, struct realm *r)
+{
+    OSSL_STORE_CTX *store_ctx = OSSL_STORE_open(pkcs11_uri, ui_method, r, NULL, NULL);
+    if (!store_ctx)
+	report(NULL, LOG_ERR, ~0, "%s %d: OSSL_STORE_OPEN(): uri=%s", __func__, __LINE__, pkcs11_uri);
+
+    X509 *cert = NULL;
+    while (!OSSL_STORE_eof(store_ctx)) {
+	OSSL_STORE_INFO *info = OSSL_STORE_load(store_ctx);
+	if (!info)
+	    continue;
+
+        if (OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_CERT) {
+	    cert = OSSL_STORE_INFO_get1_CERT(info);
+	    OSSL_STORE_INFO_free(info);
+	    break;
+        }
+	OSSL_STORE_INFO_free(info);
+    }
+
+    OSSL_STORE_close(store_ctx);
+    if (!cert) {
+	report(NULL, LOG_ERR, ~0, "%s %d: Certificate not found", __func__, __LINE__);
+	tac_exit(EX_CONFIG);
+    }
+    return cert;
+}
+
+static EVP_PKEY *load_key_from_token(const char *pkcs11_uri, UI_METHOD *ui_method, struct realm *r) {
+    OSSL_STORE_CTX *store_ctx = OSSL_STORE_open(pkcs11_uri, ui_method, r, NULL, NULL);
+    if (!store_ctx) {
+	report(NULL, LOG_ERR, ~0, "%s %d: OSSL_STORE_open(): uri=%s", __func__, __LINE__, pkcs11_uri);
+	tac_exit(EX_CONFIG);
+    }
+
+    EVP_PKEY *pkey = NULL;
+    while (!OSSL_STORE_eof(store_ctx)) {
+	OSSL_STORE_INFO *info = OSSL_STORE_load(store_ctx);
+	if (!info)
+	    continue;
+
+	if (OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY) {
+	    pkey = OSSL_STORE_INFO_get1_PKEY(info);
+	    OSSL_STORE_INFO_free(info);
+	    break;
+	}
+	OSSL_STORE_INFO_free(info);
+    }
+    OSSL_STORE_close(store_ctx);
+
+    if (!pkey) {
+	report(NULL, LOG_ERR, ~0, "%s %d: Key not found", __func__, __LINE__);
+	tac_exit(EX_CONFIG);
+    }
+    return pkey;
+}
+#endif
+
 static void ssl_apply_options(SSL_CTX *ctx, struct realm *r, int use_tls_psk)
 {
     if (r->tls_cipher_suites) {
@@ -6781,6 +6878,31 @@ static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 		   terr ? terr : "");
 	    tac_exit(EX_CONFIG);
 	}
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+    if (r->tls_pkcs11_key_uri && r->tls_pkcs11_pin) {
+	UI_METHOD *ui_method = UI_create_method("pkcs#11"); // name has no relevance
+	UI_method_set_reader(ui_method, ui_read_pin);
+	EVP_PKEY *pkey = load_key_from_token(r->tls_pkcs11_key_uri, ui_method, r);
+	if (r->tls_pkcs11_cert_uri) {
+	    X509 *cert = load_cert_from_token(r->tls_pkcs11_cert_uri, ui_method, r);
+	    OPENSSL_cleanse(r->tls_pkcs11_pin, strlen(r->tls_pkcs11_pin));
+	    if (!cert) {
+		report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_use_certificate", __func__, __LINE__);
+		tac_exit(EX_CONFIG);
+	    }
+	    if (SSL_CTX_use_certificate(ctx, cert) <= 0)
+		report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_use_certificate", __func__, __LINE__);
+	    if (SSL_CTX_use_PrivateKey(ctx, pkey) <= 0)
+		report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_use_PrivateKey", __func__, __LINE__);
+	    if (!SSL_CTX_check_private_key(ctx))
+		report(NULL, LOG_ERR, ~0, "%s %d: Certificate and key don't match", __func__, __LINE__);
+	    UI_destroy_method(ui_method);
+	    EVP_PKEY_free(pkey);
+	    X509_free(cert);
+	} else
+	    OPENSSL_cleanse(r->tls_pkcs11_pin, strlen(r->tls_pkcs11_pin));
+    }
+#endif
 	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
 	X509_VERIFY_PARAM_set_flags(SSL_CTX_get0_param(ctx), X509_V_FLAG_PARTIAL_CHAIN);
 	SSL_CTX_set_alpn_select_cb(ctx, alpn_cb, NULL);

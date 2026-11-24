@@ -65,6 +65,7 @@
 #include <openssl/provider.h>
 OSSL_PROVIDER *ossl_legacy = NULL;
 OSSL_PROVIDER *ossl_default = NULL;
+OSSL_PROVIDER *ossl_pkcs11 = NULL;
 #endif
 #endif
 
@@ -376,6 +377,15 @@ int main(int argc, char **argv, char **envp)
     if (!common_data.io)
 	common_data.io = io_init();
     cfg_read_config(common_data.conffile, parse_decls, common_data.id ? common_data.id : common_data.progname);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+    if (config.pkcs11) {
+	ossl_pkcs11 = OSSL_PROVIDER_load(NULL, "pkcs11");
+	if (!ossl_pkcs11) {
+	    report(NULL, LOG_ERR, ~0, "%s %d: OSSL_PROVIDER_load() failed to load pkcs11", __func__, __LINE__);
+            tac_exit(EX_CONFIG);
+	}
+    }
+#endif
     complete_realm(config.default_realm);
 
     if (common_data.parse_only)

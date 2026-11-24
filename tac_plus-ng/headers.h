@@ -366,6 +366,7 @@ struct config {
     tac_realm *default_realm;	/* actually the one called "default" */
     uint32_t syslog_filter;
     int dscp;
+    int pkcs11;
 };
 
 struct tac_acl {
@@ -489,6 +490,11 @@ struct realm {
     char *tls_ciphers;		// TLS1_2
     char *tls_cipher_suites;	// TLS1_3
     char *tls_psk_dhe_groups;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+    char *tls_pkcs11_pin;
+    char *tls_pkcs11_cert_uri;
+    char *tls_pkcs11_key_uri;
+#endif
     char *tls_cafile;
     int tls_verify_depth;
     int tls_min_version;
