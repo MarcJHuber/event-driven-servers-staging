@@ -1201,6 +1201,8 @@ static void parse_tls_psk_key(struct sym *sym, tac_host *host)
     case S_clear:
 	sym_get(sym);
 	str_set(&host->tls_psk_key->key, mem_strdup(host->mem, sym->buf), 0);
+	if (host->tls_psk_key->key.len < 16)
+	    parse_error(sym, "PSK is too short, a minimum of 128 bit is required");
 	sym_get(sym);
 	return;
     case S_7:
@@ -1208,6 +1210,8 @@ static void parse_tls_psk_key(struct sym *sym, tac_host *host)
 	if (c7decode(sym->buf))
 	    parse_error(sym, "type 7 psk is malformed");
 	str_set(&host->tls_psk_key->key, mem_strdup(host->mem, sym->buf), 0);
+	if (host->tls_psk_key->key.len < 16)
+	    parse_error(sym, "PSK is too short, a minimum of 128 bit is required");
 	sym_get(sym);
 	return;
     case S_6:
