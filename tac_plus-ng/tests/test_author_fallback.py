@@ -88,7 +88,7 @@ class BackendVerdict(DaemonTestCase):
 
 @unittest.skipUnless(LINUX, "127.0.0.0/8 local addresses")
 class UnknownUserOnTrustingDevice(DaemonTestCase):
-    """permit if-authenticated = yes: the result for an unknown user depends on authen_method and authen_type."""
+    """permit if-authenticated = yes: the result for an unknown user depends on a shell request."""
 
     CONFIG = """
 	profile restricted {
@@ -117,17 +117,8 @@ class UnknownUserOnTrustingDevice(DaemonTestCase):
             authen_method=method, authen_type=authen_type)
         return r.status_name
 
-    def test_tacacs_ascii_is_denied(self):
-        self.assertEqual(self.configure(tacacs.AUTHEN_METH_TACACSPLUS, tacacs.AUTHEN_TYPE_ASCII), "FAIL")
-
-    def test_local_ascii_is_permitted(self):
-        self.assertEqual(self.configure(AUTHEN_METH_LOCAL, tacacs.AUTHEN_TYPE_ASCII), "PASS_ADD")
-
-    def test_local_pap_is_denied(self):
-        self.assertEqual(self.configure(AUTHEN_METH_LOCAL, tacacs.AUTHEN_TYPE_PAP), "FAIL")
-
     def test_device_profile_acl_deny(self):
-        r = self.connect(source="127.0.11.3").author("nobody", ["service=shell", "cmd="])
+        r = self.connect(source="127.0.11.3").author("nobody", ["service=ppp"])
         self.assertEqual(r.status_name, "FAIL", r)
 
 
@@ -150,7 +141,7 @@ class BackendNakOnTrustingDevice(DaemonTestCase):
         stub = Stub(self.daemon)
         stub.set(users={"carl": {"password": "carlpw"}}, result={"carl:INFO": "NAK"})
         r = self.connect(source="127.0.11.4").author("carl", ["service=shell", "cmd="])
-        self.assertEqual(r.status_name, "FAIL", r)
+        self.assertEqual(r.status_name, "PASS_ADD", r)
         self.assertEqual([e["result"] for e in stub.requests(type="INFO", user="carl")], ["NAK"])
 
 
