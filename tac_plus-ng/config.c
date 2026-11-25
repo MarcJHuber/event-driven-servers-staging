@@ -6841,19 +6841,7 @@ static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
     }
     ssl_apply_options(ctx, r, use_tls_psk);
 
-    // FIXME: Add config option for this, or leave it hardcoded?
-    if (!SSL_CTX_set1_sigalgs_list(ctx,
-	"RSA+SHA256" //
-	":RSA+SHA384" //
-	":RSA+SHA512" //
-	":ECDSA+SHA256" //
-	":ECDSA+SHA384" //
-	":ECDSA+SHA512" //
-	":rsa_pss_rsae_sha256" //
-	":rsa_pss_rsae_sha384" //
-	":rsa_pss_rsae_sha512" //
-	))
-	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_set1_sigalgs_list", __func__, __LINE__);
+    SSL_CTX_set_security_level(ctx, 2); // disables SHA-1
 
     if (r->tls_pass) {
 	SSL_CTX_set_default_passwd_cb(ctx, ssl_pem_phrase_cb);
@@ -6882,6 +6870,7 @@ static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 		   terr ? terr : "");
 	    tac_exit(EX_CONFIG);
 	}
+	SSL_CTX_set_client_CA_list(ctx, SSL_load_client_CA_file(r->tls_cafile));
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
     if (r->tls_pkcs11_key_uri && r->tls_pkcs11_pin) {
 	UI_METHOD *ui_method = UI_create_method("pkcs#11"); // name has no relevance
