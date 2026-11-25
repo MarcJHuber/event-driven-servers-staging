@@ -689,6 +689,17 @@ class LdapTests:
         slapd, d = self.start()
         self.assert_connections_closed(slapd, d)
 
+    def test_invalid_user_name(self):
+        """A user name with a filter character: FAIL, not a back-end error, so no fallback for the next logins."""
+        _, d = self.start()
+        for user in ("x,y", "x&y"):
+            with self.subTest(user=user), d.connect() as c:
+                self.assertEqual(c.pap(user, "alicepw").status_name, "FAIL")
+        with d.connect() as c:
+            self.assertEqual(c.pap("rescue", "rescuepw").status_name, "FAIL")
+        with d.connect() as c:
+            self.assertEqual(c.pap("alice", "alicepw").status_name, "PASS")
+
     def test_groups(self):
         """groupOfNames, nested without a limit (no LDAP_NESTED_GROUP_DEPTH): names become TACMEMBER, DNs MEMBEROF."""
         _, d = self.start()
