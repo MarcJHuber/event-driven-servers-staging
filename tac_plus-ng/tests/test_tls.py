@@ -509,11 +509,11 @@ PSK = """
 	}
 	device pskclear {
 		tls psk id = pskclear
-		tls psk key = clear demoDemo
+		tls psk key = clear demoDemoDemoDemo
 	}
 	device psk6 {
 		tls psk id = psk6
-		tls psk key = 6 'ZKAb`S]hPDBAbXWZNJQ_BecWeZIMFYAAB' # demoDemo
+		tls psk key = 6 '_ifbOASUKMTdIGXHEXTBPDWF[`CeFOBY^GgMVcAbMQAAB' # demoDemoDemoDemo
 	}
 	type6-key = demo
 """ % PSK_KEY
@@ -548,10 +548,10 @@ class Psk(TlsTestCase):
         self.assertIn("tactest-device=psknas", r.args)
 
     def test_clear_text_psk(self):
-        self.assertTrue(self.connect_psk("pskclear", b"demoDemo".hex()).pap("alice", "alicepw").ok)
+        self.assertTrue(self.connect_psk("pskclear", b"demoDemoDemoDemo".hex()).pap("alice", "alicepw").ok)
 
     def test_type6_psk(self):
-        self.assertTrue(self.connect_psk("psk6", b"demoDemo".hex()).pap("alice", "alicepw").ok)
+        self.assertTrue(self.connect_psk("psk6", b"demoDemoDemoDemo".hex()).pap("alice", "alicepw").ok)
 
     def test_type6_psk_encrypted_text_is_refused(self):
         self.assertRefused(lambda: self.connect_psk("psk6", b"ZKAb`S]hPDBAbXWZNJQ_BecWeZIMFYAAB".hex()))
@@ -587,7 +587,7 @@ RADSEC = """
 class RadiusOverTls(TlsTestCase):
     """RADIUS over TLS (RFC 6614) on a TLS listener: the daemon tells it from TACACS+ by the first bytes."""
 
-    LISTEN = {"tls": "tls = yes"}
+    LISTEN = {"tls": "tls = yes aaa.protocol = radius.tls"}
     BODY = TLS_REALM + DEVICES + RADSEC
 
     def radsec(self, client="certnas"):
@@ -739,7 +739,7 @@ class RadiusOverDtls(TlsTestCase):
     """RADIUS over DTLS (RFC 7360) on a "protocol = UDP tls = yes" listener, through "openssl s_client -dtls1_2"."""
 
     UDP = True
-    LISTEN = {"dtls": "protocol = UDP tls = yes"}
+    LISTEN = {"dtls": "protocol = UDP tls = yes aaa.protocol = radius.udp"}
     BODY = TLS_REALM + DEVICES.replace("key = ipkey", "key = ipkey\n\t\tradius.key = radsecret") + RADSEC
 
     @classmethod
@@ -791,6 +791,7 @@ class RadiusDtlsAutoDetect(RadiusOverDtls):
     """"tls = auto" on the UDP listener: DTLS and plain RADIUS on the same port."""
 
     LISTEN = {"dtls": "protocol = UDP tls = auto"}
+    BODY = TLS_REALM + "\ntls minimum version = TLS1_2\n" + RADSEC
 
     test_plain_radius_on_the_dtls_listener_gets_no_answer = None    # the port takes plain RADIUS too
 
@@ -817,14 +818,14 @@ class RadiusDtlsListenerRealmAutoDetect(RadiusDtlsAutoDetect):
     """"tls auto-detect = yes" in the realm also on a "tls = yes" UDP listener: plain RADIUS works there too."""
 
     LISTEN = {"dtls": "protocol = UDP tls = yes"}
-    BODY = RadiusOverDtls.BODY + "\ttls auto-detect = yes\n"
+    BODY = RadiusOverDtls.BODY + "\ttls auto-detect = yes tls minimum version = TLS1_2\n"
 
 
 class RadiusDtlsRealmAutoDetectOff(RadiusOverDtls):
     """"tls auto-detect = no" in the realm on a "tls = auto" UDP listener: the listener takes DTLS only."""
 
     LISTEN = {"dtls": "protocol = UDP tls = auto"}
-    BODY = RadiusOverDtls.BODY + "\ttls auto-detect = no\n"
+    BODY = RadiusOverDtls.BODY + "\ttls auto-detect = no tls minimum version = TLS1_2\n"
 
 
 class RadiusOverDtlsPsk(TlsTestCase):
@@ -833,7 +834,7 @@ class RadiusOverDtlsPsk(TlsTestCase):
     UDP = True
     LISTEN = {"dtls": "protocol = UDP tls = yes tls psk = yes", "auto": "protocol = UDP tls = auto tls psk = yes"}
     CIPHER = "PSK-AES128-GCM-SHA256"
-    BODY = PSK + DEVICES + RADSEC + '\ttls ciphers = "%s"\n' % CIPHER
+    BODY = PSK + DEVICES + RADSEC + '\ttls ciphers = "%s"\ntls minimum version = TLS1_2\n' % CIPHER
     CLIENTS = {}
 
     @classmethod
