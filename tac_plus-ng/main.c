@@ -1814,7 +1814,14 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 		    complete_host(h);
 	    }
 	}
+	ctx->host = h;
     }
+    if (!h) {
+	ctx->hint = "host unknown";
+	reject_conn(ctx, ctx->hint, __func__, __LINE__);
+	return;
+    }
+
     ctx->rad_acct = (sd_ext->sd.flags & SCM_FLAG_RADACCT) ? BISTATE_YES : BISTATE_NO;
     ctx->aaa_protocol = sd_ext->sd.aaa_protocol;
     ctx->sock = s;
@@ -1845,13 +1852,8 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 	ctx->inject_len = inject_len;
     }
 
-    if (ctx->use_tls == BISTATE_NO) {
-	if (h) {
-	    if (!h->key)
-		ctx->hint = "no encryption key found";
-	} else
-	    ctx->hint = "host unknown";
-    }
+    if (ctx->use_tls == BISTATE_NO && h && !h->key)
+	ctx->hint = "no encryption key found";
 
     str_set(&ctx->peer_addr_ascii, mem_strdup(ctx->mem, su_ntoa(&peer, buf, sizeof(buf)) ? buf : "<unknown>"), 0);
     snprintf(buf, sizeof(buf), "%u", su_get_port(&peer));
