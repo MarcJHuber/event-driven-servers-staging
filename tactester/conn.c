@@ -189,6 +189,13 @@ void conn_set_tls_peer_ca(struct conn *conn, char *peer_cafile)
     conn->peer_cafile = strdup(peer_cafile);
 }
 
+void conn_set_tls_ciphers(struct conn *conn, char *ciphers)
+{
+    if (conn->tls_ciphers)
+	free(conn->tls_ciphers);
+    conn->tls_ciphers = strdup(ciphers);
+}
+
 void conn_set_tls_cipher_suites(struct conn *conn, char *cipher_suites)
 {
     if (conn->tls_cipher_suites)
@@ -407,6 +414,34 @@ static int psk_use_session_cb(SSL *ssl, const EVP_MD *md __attribute__((unused))
 
 static int conn_apply_tls_options(struct conn *conn)
 {
+
+    if (!conn->tls_ciphers)
+	conn->tls_ciphers = // TLS1_2, OpenSSL names
+        "ECDHE-ECDSA-AES256-GCM-SHA384" //
+        ":ECDHE-RSA-AES256-GCM-SHA384" //
+        ":ECDHE-ECDSA-AES256-SHA384" //
+        ":ECDHE-RSA-AES256-SHA384" //
+        ":ECDHE-ECDSA-CHACHA20-POLY1305" //
+        ":ECDHE-RSA-CHACHA20-POLY1305" //
+        ":ECDHE-ECDSA-AES128-GCM-SHA256" //
+        ":ECDHE-RSA-AES128-GCM-SHA256" //
+        ":ECDHE-ECDSA-AES128-SHA256" //
+        ":ECDHE-RSA-AES128-SHA256";
+    if (!conn->tls_cipher_suites)
+	conn->tls_cipher_suites = // TLS1_3
+        "TLS_AES_256_GCM_SHA384" //
+        ":TLS_CHACHA20_POLY1305_SHA256" //
+        ":TLS_AES_128_GCM_SHA256";
+
+    if (conn->tls_ciphers) {
+#ifdef TLS1_3_VERSION
+	if (!SSL_CTX_set_cipher_list(conn->ctx, conn->tls_ciphers))
+	    return -1;
+#else
+	return -1;
+#endif
+    }
+
     if (conn->tls_cipher_suites) {
 #ifdef TLS1_3_VERSION
 	if (!SSL_CTX_set_ciphersuites(conn->ctx, conn->tls_cipher_suites))
@@ -483,6 +518,7 @@ int conn_connect(struct conn *conn)
 
     SSL_CTX_set_options(conn->ctx, SSL_OP_ALL);
     SSL_CTX_set_options(conn->ctx, SSL_OP_NO_QUERY_MTU);
+    X509_VERIFY_PARAM_set_flags(SSL_CTX_get0_param(conn->ctx), X509_V_FLAG_PARTIAL_CHAIN);
 
     if (conn_apply_tls_options(conn)) {
 	SSL_CTX_free(conn->ctx);
