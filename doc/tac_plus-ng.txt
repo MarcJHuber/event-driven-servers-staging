@@ -2,7 +2,7 @@ TACACS+ NG
 
 Marc Huber
 
-   $Id: 580b00917026afe95e1daff6378836d2c849c7c1 $
+   $Id: 9b1ce567c1c143f4b34466f3e6eef7433f19e423 $
      __________________________________________________________
 
    Table of Contents
@@ -3182,15 +3182,16 @@ setenv LDAP_OPT_X_TLS_CACERTFILE = "/path/to/ca.pem"
    With Python 3.12 or later, ldap3 2.9.1 ignores the IP addresses
    in the subject alternative names of the certificate (unless the
    backports.ssl_match_hostname module is installed). It compares
-   only the DNS names, or the CN if the certificate has no DNS
-   names. If LDAP_HOSTS names the server by its IP address, the
-   check then fails for a certificate with DNS names, also if its
-   CA is trusted. Add a DNS name of the certificate with
-   valid_names, e.g. valid_names=['ldap.example.org']. The
-   back-end then also accepts the certificate for that name. The
-   certificate must still chain to a trusted CA. valid_names
-   applies to all servers in LDAP_HOSTS: each of them can then
-   show a certificate for one of these names.
+   the host name of the URL as text with the DNS names, or with
+   the CN if the certificate has no DNS names. So if LDAP_HOSTS
+   names the server by its IP address, the check fails also if the
+   CA is trusted, unless one of these names is that address. Add a
+   DNS name of the certificate with valid_names, e.g.
+   valid_names=['ldap.example.org']. The back-end then also
+   accepts the certificate for that name. The certificate must
+   still chain to a trusted CA. valid_names applies to all servers
+   in LDAP_HOSTS: each of them can then show a certificate for one
+   of these names.
 
    An invalid value stops the back-end with a message on stderr,
    e.g. a syntax error, an unknown key, an invalid validate value

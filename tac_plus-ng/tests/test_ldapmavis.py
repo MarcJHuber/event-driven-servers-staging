@@ -1614,8 +1614,8 @@ class LdapPythonServerName(DaemonTestCase):
 
     def result(self, url, tls_options):
         """The AV_A_RESULT of a login of ivan, and the stderr of the back-end."""
-        env = {**os.environ, "LDAP_HOSTS": url, "LDAP_BASE": BASE, "LDAP_USER": READER, "LDAP_PASSWD": "readerpw",
-               "TLS_OPTIONS": tls_options}
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("LDAP_", "TLS_", "FLAG_"))}
+        env.update(LDAP_HOSTS=url, LDAP_BASE=BASE, LDAP_USER=READER, LDAP_PASSWD="readerpw", TLS_OPTIONS=tls_options)
         p = subprocess.run([PYTHON, LDAP_PYTHON], input=b"0 TACPLUS\n4 ivan\n8 ivanpw\n49 AUTH\n=\n",
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=60, check=False)
         return dict(re.findall(r"(?m)^(\d+) (.*)$", p.stdout.decode())).get("6"), p.stderr.decode()
