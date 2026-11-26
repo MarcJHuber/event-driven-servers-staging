@@ -522,6 +522,7 @@ int conn_connect(struct conn *conn)
 
     if (conn_apply_tls_options(conn)) {
 	SSL_CTX_free(conn->ctx);
+	conn->ctx = NULL;
 	return -1;
     }
 
@@ -529,11 +530,13 @@ int conn_connect(struct conn *conn)
 #if OPENSSL_VERSION_NUMBER < 0x30000000
 	if (SSL_CTX_load_verify_locations(conn->ctx, conn->peer_cafile, NULL) != 1) {
 	    SSL_CTX_free(conn->ctx);
+	    conn->ctx = NULL;
 	    return -1;
 	}
 #else
 	if (SSL_CTX_load_verify_file(conn->ctx, conn->peer_cafile) != 1) {
 	    SSL_CTX_free(conn->ctx);
+	    conn->ctx = NULL;
 	    return -1;
 	}
 #endif
@@ -552,16 +555,19 @@ int conn_connect(struct conn *conn)
     if (conn->client_cert) {
 	if (!SSL_CTX_use_certificate_chain_file(conn->ctx, conn->client_cert)) {
 	    SSL_CTX_free(conn->ctx);
+	    conn->ctx = NULL;
 	    return -1;
 	}
 
 	if (!SSL_CTX_use_PrivateKey_file(conn->ctx, conn->client_key ? conn->client_key : conn->client_cert, SSL_FILETYPE_PEM)) {
 	    SSL_CTX_free(conn->ctx);
+	    conn->ctx = NULL;
 	    return -1;
 	}
 
 	if (!SSL_CTX_check_private_key(conn->ctx)) {
 	    SSL_CTX_free(conn->ctx);
+	    conn->ctx = NULL;
 	    return -1;
 	}
     }
@@ -578,6 +584,7 @@ int conn_connect(struct conn *conn)
     conn->ssl = SSL_new(conn->ctx);
     if (!conn->ssl) {
 	SSL_CTX_free(conn->ctx);
+	conn->ctx = NULL;
 	return -1;
     }
     SSL_set_mtu(conn->ssl, 1456);
