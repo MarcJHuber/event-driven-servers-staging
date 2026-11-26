@@ -1622,19 +1622,25 @@ class LdapPythonServerName(DaemonTestCase):
 
     @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
     def test_valid_names_for_an_ip_address_url(self):
-        """The server certificate has IP:127.0.0.1 and DNS:localhost; valid_names adds a name, the CA check stays."""
+        """An ldaps://127.0.0.1 URL: valid_names adds a DNS name of the certificate, and the CA check stays."""
         ca = LdapTests.ca(self)
-        slapd = new_slapd(self, tls=LdapTests.ldaps(ca), entries=string.Template(self.ENTRY).substitute(base=BASE))
-        self.assertTrue(slapd.url.startswith("ldaps://127.0.0.1:"), slapd.url)
+        entries = string.Template(self.ENTRY).substitute(base=BASE)
         trusted = f"ca_certs_file={ca.cert!r}"
-        cases = ((trusted, "ACK" if ldap3_matches_ip() else "ERR"),
+        # the default certificate has IP:127.0.0.1 and DNS:localhost
+        slapd = new_slapd(self, tls=LdapTests.ldaps(ca), entries=entries)
+        self.assertTrue(slapd.url.startswith("ldaps://127.0.0.1:"), slapd.url)
+        self.assertEqual(self.result(slapd.url, trusted), ("ACK" if ldap3_matches_ip() else "ERR", ""))
+        cert, key = ca.issue("dns-only", "/O=tactest/CN=localhost", server=True, san="DNS:localhost")
+        conf = (f"TLSCACertificateFile {slapd_arg(ca.cert)}\nTLSCertificateFile {slapd_arg(cert)}\n"
+                f"TLSCertificateKeyFile {slapd_arg(key)}\n")
+        slapd = new_slapd(self, tls=conf, entries=entries)
+        cases = ((trusted, "ERR"),
                  (f"{trusted}, valid_names=['localhost']", "ACK"),
                  (f"{trusted}, valid_names=['ldap.example.org']", "ERR"),
                  ("valid_names=['localhost']", "ERR"))
         for options, status in cases:
             with self.subTest(options=options):
                 self.assertEqual(self.result(slapd.url, options), (status, ""))
-
 
 if __name__ == "__main__":
     unittest.main()
