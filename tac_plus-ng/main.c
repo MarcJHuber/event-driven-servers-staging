@@ -1814,12 +1814,6 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 		    complete_host(h);
 	    }
 	}
-	ctx->host = h;
-    }
-    if (!h) {
-	ctx->hint = "host unknown";
-	reject_conn(ctx, ctx->hint, __func__, __LINE__);
-	return;
     }
 
     ctx->rad_acct = (sd_ext->sd.flags & SCM_FLAG_RADACCT) ? BISTATE_YES : BISTATE_NO;
