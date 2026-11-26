@@ -2,7 +2,7 @@ TACACS+ NG
 
 Marc Huber
 
-   $Id: 713434d804821ecbf5a3221b725fc33b438b0358 $
+   $Id: bf31cb348d51447002f4027a24a672a923a7af74 $
      __________________________________________________________
 
    Table of Contents
@@ -3181,18 +3181,18 @@ setenv LDAP_OPT_X_TLS_CACERTFILE = "/path/to/ca.pem"
 
    With Python 3.12 or later, ldap3 2.9.1 ignores the IP addresses
    in the subject alternative names of the certificate (unless the
-   backports.ssl_match_hostname module is installed). It compares
-   the host name of the URL as text with the DNS names, or with
-   the CN if the certificate has no DNS names. So if LDAP_HOSTS
-   names the server by its IP address, the check fails also if the
-   CA is trusted, unless one of these names matches the address as
-   text, also as a wildcard (e.g. *.0.0.1 matches 127.0.0.1). Add
-   a DNS name of the certificate with valid_names, e.g.
-   valid_names=['ldap.example.org']. The back-end then also
-   accepts the certificate for that name. The certificate must
-   still chain to a trusted CA. valid_names applies to all servers
-   in LDAP_HOSTS: each of them can then show a certificate for one
-   of these names.
+   backports.ssl_match_hostname module, version 3.5.0.1 or later,
+   is installed). It compares the host name of the URL as text
+   with the DNS names, or with the CN if the certificate has no
+   DNS names. So if LDAP_HOSTS names the server by its IP address,
+   the check fails also if the CA is trusted, unless one of these
+   names matches the address as text, also as a wildcard (e.g.
+   *.0.0.1 matches 127.0.0.1). Add a DNS name of the certificate
+   with valid_names, e.g. valid_names=['ldap.example.org']. The
+   back-end then also accepts the certificate for that name. The
+   certificate must still chain to a trusted CA. valid_names
+   applies to all servers in LDAP_HOSTS: each of them can then
+   show a certificate for one of these names.
 
    An invalid value stops the back-end with a message on stderr,
    e.g. a syntax error, an unknown key, an invalid validate value
