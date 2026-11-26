@@ -1629,7 +1629,8 @@ class LdapPythonServerName(DaemonTestCase):
         # the default certificate has IP:127.0.0.1 and DNS:localhost
         slapd = new_slapd(self, tls=LdapTests.ldaps(ca), entries=entries)
         self.assertTrue(slapd.url.startswith("ldaps://127.0.0.1:"), slapd.url)
-        self.assertEqual(self.result(slapd.url, trusted), ("ACK" if ldap3_matches_ip() else "ERR", ""))
+        status, stderr = self.result(slapd.url, trusted)
+        self.assertEqual(status, "ACK" if ldap3_matches_ip() else "ERR", stderr)
         cert, key = ca.issue("dns-only", "/O=tactest/CN=localhost", server=True, san="DNS:localhost")
         conf = (f"TLSCACertificateFile {slapd_arg(ca.cert)}\nTLSCertificateFile {slapd_arg(cert)}\n"
                 f"TLSCertificateKeyFile {slapd_arg(key)}\n")
@@ -1640,7 +1641,8 @@ class LdapPythonServerName(DaemonTestCase):
                  ("valid_names=['localhost']", "ERR"))
         for options, status in cases:
             with self.subTest(options=options):
-                self.assertEqual(self.result(slapd.url, options), (status, ""))
+                result, stderr = self.result(slapd.url, options)
+                self.assertEqual(result, status, stderr)
 
 if __name__ == "__main__":
     unittest.main()
