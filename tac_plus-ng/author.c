@@ -254,7 +254,7 @@ enum token author_eval_host(tac_session *session, tac_host *h, int parent_first)
     if (parent_first == TRISTATE_YES && h->skip_parent_script != BISTATE_YES)
 	res = author_eval_host(session, h->parent, parent_first);
     if (res != S_permit && res != S_deny && h->action)
-	res = tac_script_eval_r(session, h->action);
+	res = tac_script_eval_r(session, h->action, S_host);
     if (parent_first != TRISTATE_YES && res != S_permit && res != S_deny && h->skip_parent_script != BISTATE_YES)
 	res = author_eval_host(session, h->parent, parent_first);
     return res;
@@ -268,7 +268,7 @@ enum token author_eval_profile(tac_session *session, tac_profile *p, int parent_
     if (parent_first == TRISTATE_YES && p->skip_parent_script != BISTATE_YES)
 	res = author_eval_profile(session, p->parent, parent_first);
     if (res != S_permit && res != S_deny && p->action)
-	res = tac_script_eval_r(session, p->action);
+	res = tac_script_eval_r(session, p->action, S_profile);
     if (parent_first != TRISTATE_YES && res != S_permit && res != S_deny && p->skip_parent_script != BISTATE_YES)
 	res = author_eval_profile(session, p->parent, parent_first);
     return res;
@@ -307,6 +307,7 @@ static void do_author(tac_session *session)
 	return;
     }
 
+    session->profile = NULL;
     if (!session->user) {
 	// Routers don't always tell the truth regarding authentication method and type, so don't
 	// rely on that data. Just check whether the arguments resemble a shell command.

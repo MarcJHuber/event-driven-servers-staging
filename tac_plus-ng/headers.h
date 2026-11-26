@@ -940,12 +940,12 @@ void free_reverse(void *, void *);
 void resume_session(tac_session *, int);
 void get_pkt_data(tac_session *, struct authen_start *, struct author *);
 
-enum token tac_script_eval_r(tac_session *, struct mavis_action *);
+enum token tac_script_eval_r(tac_session *, struct mavis_action *, enum token level);
 void tac_script_parse(struct sym *sym, struct mavis_action **p, mem_t * mem, tac_realm * realm, tac_user * user);
 void tac_script_expire_exec_context(struct context *);
 void tac_script_set_exec_context(tac_session *, char *);
 char *tac_script_get_exec_context(tac_session *);
-enum token eval_tac_acl(tac_session *, struct tac_acl *);
+enum token eval_tac_acl(tac_session *, struct tac_acl *, enum token level);
 tac_host *lookup_host(char *, tac_realm *);
 
 #define ACSACL "#ACSACL#"
