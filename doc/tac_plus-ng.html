@@ -14,7 +14,7 @@
 <div class="TITLEPAGE">
 <h1 class="title"><a name="AEN2" id="AEN2">TACACS+ NG</a></h1>
 <h3 class="author"><a name="AEN4" id="AEN4">Marc Huber</a></h3>
-<span class="releaseinfo">$Id: 21127f234b25fe36cbb7f3feefef989902b7f04c $<br></span>
+<span class="releaseinfo">$Id: 168c84cb9bfedf2315f1f232556d28558400312c $<br></span>
 <hr></div>
 <div class="TOC">
 <dl>
@@ -143,48 +143,48 @@
 <dt>5.1.2. <a class="lk" href="#AEN3586">Python LDAP Backend</a></dt>
 </dl>
 </dd>
-<dt>5.2. <a class="lk" href="#AEN3623">PAM back-end</a></dt>
-<dt>5.3. <a class="lk" href="#AEN3628">System Password Backends</a></dt>
-<dt>5.4. <a class="lk" href="#AEN3635">Shadow Backend</a></dt>
-<dt>5.5. <a class="lk" href="#AEN3658">RADIUS Backends</a></dt>
+<dt>5.2. <a class="lk" href="#AEN3628">PAM back-end</a></dt>
+<dt>5.3. <a class="lk" href="#AEN3633">System Password Backends</a></dt>
+<dt>5.4. <a class="lk" href="#AEN3640">Shadow Backend</a></dt>
+<dt>5.5. <a class="lk" href="#AEN3663">RADIUS Backends</a></dt>
 <dd>
 <dl>
-<dt>5.5.1. <a class="lk" href="#AEN3689">Sample Configuration</a></dt>
+<dt>5.5.1. <a class="lk" href="#AEN3694">Sample Configuration</a></dt>
 </dl>
 </dd>
-<dt>5.6. <a class="lk" href="#AEN3692">Experimental Backends</a></dt>
-<dt>5.7. <a class="lk" href="#AEN3696">Error Handling</a></dt>
+<dt>5.6. <a class="lk" href="#AEN3697">Experimental Backends</a></dt>
+<dt>5.7. <a class="lk" href="#AEN3701">Error Handling</a></dt>
 </dl>
 </dd>
-<dt>6. <a class="lk" href="#AEN3706">RADIUS</a></dt>
+<dt>6. <a class="lk" href="#AEN3711">RADIUS</a></dt>
 <dd>
 <dl>
-<dt>6.1. <a class="lk" href="#AEN3718">Accepting RADIUS Queries</a></dt>
-<dt>6.2. <a class="lk" href="#AEN3736">RADIUS DACLs</a></dt>
-<dt>6.3. <a class="lk" href="#AEN3751">RADIUS Dictionary</a></dt>
-<dt>6.4. <a class="lk" href="#AEN3766">RADIUS Rule Set</a></dt>
-<dt>6.5. <a class="lk" href="#AEN3775">RADIUS Logging</a></dt>
-<dt>6.6. <a class="lk" href="#AEN3783">RADIUS Example Configurations</a></dt>
+<dt>6.1. <a class="lk" href="#AEN3723">Accepting RADIUS Queries</a></dt>
+<dt>6.2. <a class="lk" href="#AEN3741">RADIUS DACLs</a></dt>
+<dt>6.3. <a class="lk" href="#AEN3756">RADIUS Dictionary</a></dt>
+<dt>6.4. <a class="lk" href="#AEN3771">RADIUS Rule Set</a></dt>
+<dt>6.5. <a class="lk" href="#AEN3780">RADIUS Logging</a></dt>
+<dt>6.6. <a class="lk" href="#AEN3788">RADIUS Example Configurations</a></dt>
 </dl>
 </dd>
-<dt>7. <a class="lk" href="#AEN3787">Debugging</a></dt>
+<dt>7. <a class="lk" href="#AEN3792">Debugging</a></dt>
 <dd>
 <dl>
-<dt>7.1. <a class="lk" href="#AEN3790">Debugging Configuration Files</a></dt>
-<dt>7.2. <a class="lk" href="#AEN3798">Trace Options</a></dt>
+<dt>7.1. <a class="lk" href="#AEN3795">Debugging Configuration Files</a></dt>
+<dt>7.2. <a class="lk" href="#AEN3803">Trace Options</a></dt>
 </dl>
 </dd>
-<dt>8. <a class="lk" href="#AEN3956">Frequently Asked Questions</a></dt>
-<dt>9. <a class="lk" href="#AEN4033">Multi-tenant setups</a></dt>
+<dt>8. <a class="lk" href="#AEN3961">Frequently Asked Questions</a></dt>
+<dt>9. <a class="lk" href="#AEN4038">Multi-tenant setups</a></dt>
 <dd>
 <dl>
-<dt>9.1. <a class="lk" href="#AEN4064">AD, Realms and Tenants</a></dt>
+<dt>9.1. <a class="lk" href="#AEN4069">AD, Realms and Tenants</a></dt>
 </dl>
 </dd>
-<dt>10. <a class="lk" href="#AEN4069">AAA rule tracing</a></dt>
-<dt>11. <a class="lk" href="#AEN4085">Bugs</a></dt>
-<dt>12. <a class="lk" href="#AEN4095">References</a></dt>
-<dt>13. <a class="lk" href="#AEN4105">Copyrights and Acknowledgements</a></dt>
+<dt>10. <a class="lk" href="#AEN4074">AAA rule tracing</a></dt>
+<dt>11. <a class="lk" href="#AEN4090">Bugs</a></dt>
+<dt>12. <a class="lk" href="#AEN4100">References</a></dt>
+<dt>13. <a class="lk" href="#AEN4110">Copyrights and Acknowledgements</a></dt>
 </dl>
 </div>
 <div class="section">
@@ -3751,6 +3751,7 @@ int async 1
 <td>
 <p>Keyword arguments of <tt class="literal">ldap3.Tls</tt> for LDAPS and StartTLS, in Python syntax. The values can use the names of the Python <tt class="literal">ssl</tt> module, e.g. <tt class="literal">ssl.CERT_NONE</tt>. No other Python names are available. See <a class="lk" href="https://ldap3.readthedocs.io/en/latest/ssltls.html" target="_top">the ldap3 SSL and TLS documentation</a> for the keys.</p>
 <p>The back-end checks the server certificate if <tt class="literal">TLS_OPTIONS</tt> does not set <tt class="literal">validate</tt> (<tt class="literal">validate=ssl.CERT_REQUIRED</tt>). The certificate must chain to a CA of the system, and it must match the host name in <tt class="literal">LDAP_HOSTS</tt>. <tt class="literal">ca_certs_file='/path/to/ca.pem'</tt> uses the CAs in that file instead of the CAs of the system. <tt class="literal">validate=ssl.CERT_NONE</tt> turns the check off.</p>
+<p>With Python 3.12 or later, ldap3 2.9.1 ignores the IP addresses in the certificate (unless the <tt class="literal">backports.ssl_match_hostname</tt> module is installed). If <tt class="literal">LDAP_HOSTS</tt> names the server by its IP address, the check then fails also with a trusted certificate. Add a DNS name of the certificate with <tt class="literal">valid_names</tt>, e.g. <tt class="literal">valid_names=['ldap.example.org']</tt>. The back-end then also accepts the certificate for that name. The certificate must still chain to a trusted CA.</p>
 <p>An invalid value stops the back-end with a message on stderr, e.g. a syntax error, an unknown key, an invalid <tt class="literal">validate</tt> value or a <tt class="literal">ca_certs_file</tt> that does not exist. The message does not show the values.</p>
 <p>Default: unset</p>
 <p>Example: <tt class="literal">"ca_certs_file='/etc/ssl/ldap-ca.pem'"</tt></p>
@@ -3763,7 +3764,7 @@ int async 1
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3623" id="AEN3623">5.2. PAM back-end</a></h3>
+<h3 class="section"><a name="AEN3628" id="AEN3628">5.2. PAM back-end</a></h3>
 <p>Example configuration for using <span class="emphasis"><i class="emphasis">Pluggable Authentication Modules</i></span>:</p>
 <pre class="screen">id = spawnd { listen = { port = 49 } }
 
@@ -3802,13 +3803,13 @@ id = tac_plus {
 }</pre></div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3628" id="AEN3628">5.3. System Password Backends</a></h3>
+<h3 class="section"><a name="AEN3633" id="AEN3633">5.3. System Password Backends</a></h3>
 <p><tt class="literal">mavis_tacplus_passwd.pl</tt> authenticates against your local password database. Alas, to use this functionality, the script may have to run as root, as it needs access to the encrypted passwords. Primary and auxiliary UNIX group memberships will be mapped to TACACS+ groups.</p>
 <p><tt class="literal">mavis_tacplus_opie.pl</tt> is based on <tt class="literal">mavis_tacplus_passwd.pl</tt>, but uses OPIE one-time passwords for authentication.</p>
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3635" id="AEN3635">5.4. Shadow Backend</a></h3>
+<h3 class="section"><a name="AEN3640" id="AEN3640">5.4. Shadow Backend</a></h3>
 <p><tt class="literal">mavis_tacplus_shadow.pl</tt> may be used to keep user passwords out of the <span class="bold"><b class="emphasis">tac_plus</b></span>configuration file, enabling users to change their passwords via the password change dialog. Passwords are stored in an auxiliary, <tt class="literal">/etc/shadow</tt>-like ASCII file, one user per line:</p>
 <pre class="screen"><span class="emphasis"><i class="emphasis">username</i></span>:<span class="emphasis"><i class="emphasis">encryptedPassword</i></span>:<span class="emphasis"><i class="emphasis">lastChange</i></span>:<span class="emphasis"><i class="emphasis">minAge</i></span>:<span class="emphasis"><i class="emphasis">maxAge</i></span>:<span class="emphasis"><i class="emphasis">reserved</i></span></pre>
 <p><tt class="literal">lastChange</tt> is the number of days since 1970-01-01 when the password was last changed, and <tt class="literal">minAge</tt> and <tt class="literal">maxAge</tt> determine whether the password may/may not/needs to be changed. Setting <tt class="literal">lastChange</tt> to <tt class="literal">0</tt> enforces a password change upon first login.</p>
@@ -3845,7 +3846,7 @@ test:$1$pQtQsMuj$GKpIr5r2GNaZNfDfnCBtw.:15218:1:30:
 ...</pre></div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3658" id="AEN3658">5.5. RADIUS Backends</a></h3>
+<h3 class="section"><a name="AEN3663" id="AEN3663">5.5. RADIUS Backends</a></h3>
 <p><tt class="literal">mavis_tacplus_radius.pl</tt> authenticates against a RADIUS server. No authorization is done, unless the <tt class="literal">RADIUS_GROUP_ATTR</tt> environment variable is set (see below). This module may, for example, be useful if you have static user account definitions in the configuration file, but authentication passwords should be verified by RADIUS. Use the <tt class="literal">login = mavis</tt> or <tt class="literal">password = mavis</tt> statement in the user profile for this to work.</p>
 <p>If the <tt class="literal">Authen::Radius</tt> Perl module is installed, the value of the RADIUS attribute specified by <tt class="literal">RADIUS_GROUP_ATTR</tt> will be used to create a <tt class="literal">TAC_MEMBER</tt> definition which uses the attribute value as group membership. E.g., an attribute value of <tt class="literal">Administrator</tt> would result in a</p>
 <pre class="screen">  member = Administrator</pre>
@@ -3868,7 +3869,7 @@ test:$1$pQtQsMuj$GKpIr5r2GNaZNfDfnCBtw.:15218:1:30:
 <p>Alternatively to <tt class="literal">mavis_tacplus_radius.pl</tt> the <tt class="literal">pamradius</tt> program may called by the <tt class="literal">external</tt> module. Results should be roughly equivalent.</p>
 <div class="section">
 <hr>
-<h4 class="section"><a name="AEN3689" id="AEN3689">5.5.1. Sample Configuration</a></h4>
+<h4 class="section"><a name="AEN3694" id="AEN3694">5.5.1. Sample Configuration</a></h4>
 <pre class="screen">## Use tacinfo_cache to cache authorization data to disk:
 mavis module tacinfo_cache {
     directory = /tmp/tacinfo
@@ -3889,12 +3890,12 @@ mavis module external {
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3692" id="AEN3692">5.6. Experimental Backends</a></h3>
+<h3 class="section"><a name="AEN3697" id="AEN3697">5.6. Experimental Backends</a></h3>
 <p><tt class="literal">mavis_tacplus_sms.pl</tt> is a sample (skeleton) script to send One-Time Passwords via a SMS back-end.</p>
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3696" id="AEN3696">5.7. Error Handling</a></h3>
+<h3 class="section"><a name="AEN3701" id="AEN3701">5.7. Error Handling</a></h3>
 <p>If a back-end script fails due to an external problem (e.g. LDAP server unavailability), your router may or may not fall back to local authentication (if configured). Chances are that the fallback doesn't work. If you still want to be able to authenticate via TACACS+ in that case, you can do so with a non-MAVIS user which will only be valid in case of a back-end error:</p>
 <pre class="screen">    ...
     # set the time interval you want the user to be valid if the back-end fails:
@@ -3926,7 +3927,7 @@ mavis module external {
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN3706" id="AEN3706">6. RADIUS</a></h2>
+<h2 class="section"><a name="AEN3711" id="AEN3711">6. RADIUS</a></h2>
 <p><span class="bold"><b class="emphasis">tac_plus-ng</b></span> comes with RADIUS support: PAP/CHAP/MSCHAPv1/MSCHAPv2 authentications, accounting and Downloadable ACLs are supported. This should be sufficient for handling administrative access, and it obviously provides a common configuration for both <span class="emphasis"><i class="emphasis">TACACS+</i></span> and <span class="emphasis"><i class="emphasis">RADIUS</i></span></p>
 <p>If you don't care about <span class="emphasis"><i class="emphasis">RADIUS</i></span>: That functionality will not be available unless a <span class="emphasis"><i class="emphasis">RADIUS dictionary</i></span> (see below) is configured, and TLS/DTLS/Message-Signing absolutely requires building with <span class="emphasis"><i class="emphasis">OpenSSL</i></span> support.</p>
 <p>Also, you can selectively disable the protocols you want to be supported on a per-realm basis:</p>
@@ -3936,7 +3937,7 @@ mavis module external {
 </pre>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3718" id="AEN3718">6.1. Accepting RADIUS Queries</a></h3>
+<h3 class="section"><a name="AEN3723" id="AEN3723">6.1. Accepting RADIUS Queries</a></h3>
 <p>By default, <span class="bold"><b class="emphasis">spawnd</b></span> will only care for TCP sessions. This is sufficient for <span class="emphasis"><i class="emphasis">RADIUS-over-TLS (RADSEC)</i></span>, but plain legacy RADIUS requires UDP. This can easily be enables in a <span class="bold"><b class="emphasis">spawnd</b></span> directive:</p>
 <pre class="screen">id = spawnd {
         background = no
@@ -3951,7 +3952,7 @@ mavis module external {
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3736" id="AEN3736">6.2. RADIUS DACLs</a></h3>
+<h3 class="section"><a name="AEN3741" id="AEN3741">6.2. RADIUS DACLs</a></h3>
 <p>CISCO downloadable ACLs (dACLs, DACLs) are supported for RADIUS. Downloadable ACL sample definition:</p>
 <pre class="screen">    dacl demoacl {
         # prefix = "ip:inacl" # This is the default.
@@ -3970,7 +3971,7 @@ mavis module external {
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3751" id="AEN3751">6.3. RADIUS Dictionary</a></h3>
+<h3 class="section"><a name="AEN3756" id="AEN3756">6.3. RADIUS Dictionary</a></h3>
 <p>There's no file format standard for RADIUS dictionaries, so <span class="bold"><b class="emphasis">tac_plus-ng</b></span> comes with its own, too. Here's an excerpt from <tt class="literal">tac_ls-ng/sample/radius-dict.cfg</tt> which demonstrates the syntax:</p>
 <pre class="screen">radius.dictionary {
         attribute User-Name             1       string
@@ -4042,7 +4043,7 @@ radius.dictionary cisco 9 {
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3766" id="AEN3766">6.4. RADIUS Rule Set</a></h3>
+<h3 class="section"><a name="AEN3771" id="AEN3771">6.4. RADIUS Rule Set</a></h3>
 <p><span class="emphasis"><i class="emphasis">RADIUS</i></span> attributes are accessible via <tt class="literal">radius[</tt><span class="emphasis"><i class="emphasis">AttributeName</i></span><tt class="literal">]</tt> and can be used both in conditions and <tt class="literal">set</tt> clauses:</p>
 <pre class="screen">    if (aaa.protocol == radius) {
         if (radius[Service-Type] ==  Administrative-User)  {
@@ -4055,7 +4056,7 @@ radius.dictionary cisco 9 {
 </pre></div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3775" id="AEN3775">6.5. RADIUS Logging</a></h3>
+<h3 class="section"><a name="AEN3780" id="AEN3780">6.5. RADIUS Logging</a></h3>
 <p><span class="emphasis"><i class="emphasis">TACACS+</i></span> and <span class="emphasis"><i class="emphasis">RADIUS</i></span> share the <tt class="literal">connection log</tt>. Dedicated <span class="emphasis"><i class="emphasis">RADIUS</i></span> logs for authentication and acounting can be enabled:</p>
 <pre class="screen">        log accesslog { destination = /tmp/tac/access.log }     # TACACS+
         log authorlog { destination = /tmp/tac/author.log }     # TACACS+
@@ -4073,23 +4074,23 @@ radius.dictionary cisco 9 {
 </pre></div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3783" id="AEN3783">6.6. RADIUS Example Configurations</a></h3>
+<h3 class="section"><a name="AEN3788" id="AEN3788">6.6. RADIUS Example Configurations</a></h3>
 <p>Sample configurations are available in the <tt class="literal">tac_plus-ng/samples/</tt> directory.</p>
 </div>
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN3787" id="AEN3787">7. Debugging</a></h2>
+<h2 class="section"><a name="AEN3792" id="AEN3792">7. Debugging</a></h2>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3790" id="AEN3790">7.1. Debugging Configuration Files</a></h3>
+<h3 class="section"><a name="AEN3795" id="AEN3795">7.1. Debugging Configuration Files</a></h3>
 <p>When creating configuration files, it is convenient to check their syntax using the <tt class="literal">-P</tt> flag to <tt class="literal">tac_plus</tt>; e.g:</p>
 <pre class="screen">tac_plus -P <span class="emphasis"><i class="emphasis">config-file</i></span> </pre>
 <p>will syntax check the configuration file and print any error messages on the terminal.</p>
 </div>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN3798" id="AEN3798">7.2. Trace Options</a></h3>
+<h3 class="section"><a name="AEN3803" id="AEN3803">7.2. Trace Options</a></h3>
 <p>Trace (or debugging) options may be specified in <span class="emphasis"><i class="emphasis">global</i></span>, <span class="emphasis"><i class="emphasis">device</i></span>, <span class="emphasis"><i class="emphasis">user</i></span> and <span class="emphasis"><i class="emphasis">group</i></span> context. The current debugging level is a combination (read: <tt class="literal">OR</tt>) of all those. Generic syntax is:</p>
 <pre class="screen">debug = <span class="emphasis"><i class="emphasis">option ...</i></span></pre>
 <p>For example, getting command authorization to work in a predictable way can be tricky - the exact attributes the NAS sends to the daemon may depend on the IOS version, and may in general not match your expectations. If your regular expressions don't work, add</p>
@@ -4100,7 +4101,7 @@ radius.dictionary cisco 9 {
 <p>Trace options may be removed by prefixing them with<tt class="literal">-</tt>. Example:</p>
 <pre class="screen">debug = ALL -PARSE</pre>
 <p>The debugging options available are summarized in the following table:</p>
-<div class="informaltable"><a name="AEN3818" id="AEN3818"></a>
+<div class="informaltable"><a name="AEN3823" id="AEN3823"></a>
 <table border="1" frame="border" class="CALSTABLE">
 <col width="5%" title="col1">
 <col width="15%" title="col2">
@@ -4279,7 +4280,7 @@ radius.dictionary cisco 9 {
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN3956" id="AEN3956">8. Frequently Asked Questions</a></h2>
+<h2 class="section"><a name="AEN3961" id="AEN3961">8. Frequently Asked Questions</a></h2>
 <ul>
 <li>
 <p><span class="bold"><b class="emphasis">Is there a Graphical User Interface of any kind?</b></span></p>
@@ -4374,7 +4375,7 @@ Router#</pre></li>
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN4033" id="AEN4033">9. Multi-tenant setups</a></h2>
+<h2 class="section"><a name="AEN4038" id="AEN4038">9. Multi-tenant setups</a></h2>
 <p>While using a dedictated tac_plus-ng installation per tenant is certainly possible it lacks some elegance. There are other ways:</p>
 <p>A single daemon can tell tenants apart by</p>
 <ul>
@@ -4428,7 +4429,7 @@ Router#</pre></li>
 <p>and the daemon will use the VRF name your clients did connect from as realm name.</p>
 <div class="section">
 <hr>
-<h3 class="section"><a name="AEN4064" id="AEN4064">9.1. AD, Realms and Tenants</a></h3>
+<h3 class="section"><a name="AEN4069" id="AEN4069">9.1. AD, Realms and Tenants</a></h3>
 <p>The suggested setup for giving customers limited access to NADs is:</p>
 <pre class="screen">id = tac_plus-ng {
     mavis module external { your AD configuration goes here }
@@ -4465,7 +4466,7 @@ Router#</pre></li>
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN4069" id="AEN4069">10. AAA rule tracing</a></h2>
+<h2 class="section"><a name="AEN4074" id="AEN4074">10. AAA rule tracing</a></h2>
 <p>The distribution includes the <tt class="literal">tactrace.pl</tt> Perl script. It's usually not installed automatically, due to some Perl dependencies that need to be met. It requires a couple of CPAN Perl modules, and a custom one. Your OS distribution might provide re-built packages for <tt class="literal">Net::IP</tt> and/or <tt class="literal">Net::TacacsPlus::Packet</tt>, so check for this first. For unavailable packages, you can do a manual install using cpan. Example for Ubuntu:</p>
 <pre class="screen">sudo apt install libnet-ip-perl
 sudo cpan install Net::TacacsPlus::Packet</pre>
@@ -4560,7 +4561,7 @@ supported as the password would show up as clear text in the process listing.</p
 127.0.0.1 ---&lt;end packet&gt;---</pre></div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN4085" id="AEN4085">11. Bugs</a></h2>
+<h2 class="section"><a name="AEN4090" id="AEN4090">11. Bugs</a></h2>
 <ul>
 <li>
 <p>This documentation isn't well structured.</p>
@@ -4575,7 +4576,7 @@ supported as the password would show up as clear text in the process listing.</p
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN4095" id="AEN4095">12. References</a></h2>
+<h2 class="section"><a name="AEN4100" id="AEN4100">12. References</a></h2>
 <ul>
 <li>
 <p><a class="lk" href="https://tools.ietf.org/html/draft-grant-tacacs-02" target="_top">draft-grant-tacacs-02.txt - The TACACS+ Protocol (Version 1.78)</a></p>
@@ -4587,7 +4588,7 @@ supported as the password would show up as clear text in the process listing.</p
 </div>
 <div class="section">
 <hr>
-<h2 class="section"><a name="AEN4105" id="AEN4105">13. Copyrights and Acknowledgements</a></h2>
+<h2 class="section"><a name="AEN4110" id="AEN4110">13. Copyrights and Acknowledgements</a></h2>
 <p>Please see the source for copyright and licensing information of individual files.</p>
 <ul>
 <li>
@@ -4626,7 +4627,7 @@ supported as the password would show up as clear text in the process listing.</p
 </li>
 <li>
 <p>The end-user documentation included with the redistribution, if any, must include the following acknowledgment:</p>
-<a name="AEN4148" id="AEN4148"></a>
+<a name="AEN4153" id="AEN4153"></a>
 <blockquote class="BLOCKQUOTE">
 <p>This product includes software developed by Marc Huber (<code class="email">&lt;<a class="lk" href="mailto:Marc.Huber@web.de">Marc.Huber@web.de</a>&gt;</code>).</p>
 </blockquote>

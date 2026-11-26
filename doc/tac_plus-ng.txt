@@ -2,7 +2,7 @@ TACACS+ NG
 
 Marc Huber
 
-   $Id: 21127f234b25fe36cbb7f3feefef989902b7f04c $
+   $Id: 168c84cb9bfedf2315f1f232556d28558400312c $
      __________________________________________________________
 
    Table of Contents
@@ -3178,6 +3178,15 @@ setenv LDAP_OPT_X_TLS_CACERTFILE = "/path/to/ca.pem"
    name in LDAP_HOSTS. ca_certs_file='/path/to/ca.pem' uses the
    CAs in that file instead of the CAs of the system.
    validate=ssl.CERT_NONE turns the check off.
+
+   With Python 3.12 or later, ldap3 2.9.1 ignores the IP addresses
+   in the certificate (unless the backports.ssl_match_hostname
+   module is installed). If LDAP_HOSTS names the server by its IP
+   address, the check then fails also with a trusted certificate.
+   Add a DNS name of the certificate with valid_names, e.g.
+   valid_names=['ldap.example.org']. The back-end then also
+   accepts the certificate for that name. The certificate must
+   still chain to a trusted CA.
 
    An invalid value stops the back-end with a message on stderr,
    e.g. a syntax error, an unknown key, an invalid validate value

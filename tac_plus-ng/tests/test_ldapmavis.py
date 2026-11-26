@@ -42,6 +42,8 @@ LDAP_PERL_OLD = os.path.join(prefix(), "lib", "mavis", "mavis_tacplus_ldap.pl")
 LDAP_PERL_AUTHONLY = os.path.join(prefix(), "lib", "mavis", "mavis_ldap_authonly.pl")
 TACACS_SCHEMA = os.path.join(prefix(), "lib", "mavis", "extra", "tacacs.schema")
 PERL = shutil.which("perl") or "/usr/bin/perl"
+LDAP_PYTHON = os.path.join(prefix(), "lib", "mavis", "mavis_tacplus_ldap.py")
+PYTHON = "/usr/bin/python3" if os.access("/usr/bin/python3", os.X_OK) else shutil.which("python3") or "python3"
 START_TIMEOUT = 10.0
 LDAP_OPT_X_TLS_PACKAGE = 0x6011  # from ldap.h
 CLOSE_TIMEOUT = 5.0
@@ -244,6 +246,23 @@ def perl_ldap():
                               stderr=subprocess.DEVNULL, check=False).returncode == 0
     except OSError:
         return False
+
+
+def python_ldap3():
+    """The Python back-end needs the ldap3 module."""
+    try:
+        return subprocess.run([PYTHON, "-c", "import ldap3"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              check=False).returncode == 0
+    except OSError:
+        return False
+
+
+def ldap3_matches_ip():
+    """True if the host name check of ldap3 accepts an IP address SAN (not with ldap3 2.9.1 on Python 3.12)."""
+    probe = ("from ldap3.core.tls import match_hostname\n"
+             "match_hostname({'subjectAltName': (('IP Address', '127.0.0.1'),)}, '127.0.0.1')")
+    return subprocess.run([PYTHON, "-c", probe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          check=False).returncode == 0
 
 
 def libldap():
@@ -1582,6 +1601,39 @@ class PerlSkipStartTlsValue(unittest.TestCase):
                                        stderr=subprocess.PIPE, env=env, timeout=60, check=False)
                     self.assertNotEqual(p.returncode, 0)
                     self.assertIn(f"invalid LDAP_SKIP_STARTTLS: '{value}' (0 or 1)", p.stderr.decode())
+
+
+@unittest.skipUnless(os.access(SLAPD, os.X_OK), "no OpenLDAP slapd")
+@unittest.skipUnless(python_ldap3(), f"no ldap3 module for {PYTHON}")
+class LdapPythonServerName(DaemonTestCase):
+    """mavis_tacplus_ldap.py, through its standard input and output: the certificate check for an IP address URL."""
+
+    CONFIG = None
+    ENTRY = ("\ndn: uid=ivan,ou=people,$base\nobjectClass: inetOrgPerson\nobjectClass: posixAccount\nuid: ivan\n"
+             "cn: Ivan\nsn: Ivan\nuidNumber: 1005\ngidNumber: 1005\nhomeDirectory: /home/ivan\nuserPassword: ivanpw\n")
+
+    def result(self, url, tls_options):
+        """The AV_A_RESULT of a login of ivan, and the stderr of the back-end."""
+        env = {**os.environ, "LDAP_HOSTS": url, "LDAP_BASE": BASE, "LDAP_USER": READER, "LDAP_PASSWD": "readerpw",
+               "TLS_OPTIONS": tls_options}
+        p = subprocess.run([PYTHON, LDAP_PYTHON], input=b"0 TACPLUS\n4 ivan\n8 ivanpw\n49 AUTH\n=\n",
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=60, check=False)
+        return dict(re.findall(r"(?m)^(\d+) (.*)$", p.stdout.decode())).get("6"), p.stderr.decode()
+
+    @unittest.skipUnless(tls.openssl_available(), "the certificates need the openssl command")
+    def test_valid_names_for_an_ip_address_url(self):
+        """The server certificate has IP:127.0.0.1 and DNS:localhost; valid_names adds a name, the CA check stays."""
+        ca = LdapTests.ca(self)
+        slapd = new_slapd(self, tls=LdapTests.ldaps(ca), entries=string.Template(self.ENTRY).substitute(base=BASE))
+        self.assertTrue(slapd.url.startswith("ldaps://127.0.0.1:"), slapd.url)
+        trusted = f"ca_certs_file={ca.cert!r}"
+        cases = ((trusted, "ACK" if ldap3_matches_ip() else "ERR"),
+                 (f"{trusted}, valid_names=['localhost']", "ACK"),
+                 (f"{trusted}, valid_names=['ldap.example.org']", "ERR"),
+                 ("valid_names=['localhost']", "ERR"))
+        for options, status in cases:
+            with self.subTest(options=options):
+                self.assertEqual(self.result(slapd.url, options), (status, ""))
 
 
 if __name__ == "__main__":
