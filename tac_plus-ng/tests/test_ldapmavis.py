@@ -258,7 +258,10 @@ def python_ldap3():
 
 
 def ldap3_matches_ip():
-    """True if the host name check of ldap3 accepts an IP address SAN (not with ldap3 2.9.1 on Python 3.12)."""
+    """True if the host name check of ldap3 accepts an IP address SAN.
+
+    ldap3 2.9.1 on Python 3.12 does so only with backports.ssl_match_hostname 3.5.0.1 or later.
+    """
     probe = ("from ldap3.core.tls import match_hostname\n"
              "match_hostname({'subjectAltName': (('IP Address', '127.0.0.1'),)}, '127.0.0.1')")
     return subprocess.run([PYTHON, "-c", probe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
