@@ -1873,6 +1873,12 @@ static void accept_control_common(int s, struct scm_data_accept_ext *sd_ext, soc
 
     set_ctx_info(ctx, sd_ext);
 
+    // TLS, PSK and the MAVIS device lookup all need the device of the address
+    if (!ctx->host) {
+	reject_conn(ctx, "host unknown", __func__, __LINE__);
+	return;
+    }
+
     complete_host_mavis(ctx);
 }
 
@@ -1899,8 +1905,7 @@ static void complete_host_mavis(struct context *ctx)
 	return;
     }
 
-    if (ctx->host)
-	ctx->key = ctx->host->key;
+    ctx->key = ctx->host->key;
 
 #ifdef WITH_SSL
     io_set_cb_i(ctx->io, ctx->sock, (void *) accept_control_check_tls);

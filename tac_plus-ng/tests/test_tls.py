@@ -33,6 +33,8 @@ the openssl command); nothing is kept in the tree. Skipped without the
 openssl command or in a build without OpenSSL.
 """
 
+import hashlib
+import hmac
 import os
 import socket
 import ssl
@@ -1078,3 +1080,110 @@ class CrlDirPathBuffer(TlsTestCase):
         self.assertTrue(c.pap("alice", "alicepw").ok)
         self.assertEqual(self.device_and_transport(c),
                          {"tactest-device": "certnas", "tactest-transport": "tls"})
+
+
+def _hkdf_expand_label(secret, label, context, length=32):
+    """RFC 8446 7.1 HKDF-Expand-Label with SHA-256, for at most one hash length."""
+    full = b"tls13 " + label
+    info = struct.pack("!HB", length, len(full)) + full + bytes([len(context)]) + context
+    return hmac.new(secret, info + b"\x01", hashlib.sha256).digest()[:length]
+
+
+def psk_ke_client_hello(identity, key):
+    """A TLS 1.3 ClientHello with an external PSK that offers only psk_ke (no (EC)DHE) and no key share.
+
+    openssl s_client always offers psk_dhe_ke, so this one is built by
+    hand; the binder follows RFC 8446 4.2.11.2 for TLS_AES_128_GCM_SHA256.
+    """
+    def ext(kind, data):
+        return struct.pack("!HH", kind, len(data)) + data
+
+    identities = struct.pack("!H", len(identity)) + identity + struct.pack("!I", 0)
+    identities = struct.pack("!H", len(identities)) + identities
+    binders_len = 2 + 1 + 32
+    extensions = (ext(43, b"\x02\x03\x04")                        # supported_versions: TLS 1.3
+                  + ext(13, b"\x00\x04\x04\x03\x08\x04")          # signature_algorithms
+                  + ext(45, b"\x01\x00"))                         # psk_key_exchange_modes: psk_ke only
+    psk_ext_len = len(identities) + binders_len
+    extensions_len = len(extensions) + 4 + psk_ext_len
+    body = (b"\x03\x03" + os.urandom(32) + b"\x20" + os.urandom(32)
+            + b"\x00\x02\x13\x01" + b"\x01\x00"                  # TLS_AES_128_GCM_SHA256, no compression
+            + struct.pack("!H", extensions_len) + extensions
+            + struct.pack("!HH", 41, psk_ext_len) + identities)  # pre_shared_key, up to the binders
+    length = len(body) + binders_len
+    truncated = b"\x01" + length.to_bytes(3, "big") + body
+    early = hmac.new(bytes(32), key, hashlib.sha256).digest()
+    binder_key = _hkdf_expand_label(early, b"ext binder", hashlib.sha256(b"").digest())
+    finished_key = _hkdf_expand_label(binder_key, b"finished", b"")
+    binder = hmac.new(finished_key, hashlib.sha256(truncated).digest(), hashlib.sha256).digest()
+    handshake = truncated + struct.pack("!HB", 33, 32) + binder
+    return b"\x16\x03\x01" + struct.pack("!H", len(handshake)) + handshake
+
+
+def server_hello_extensions(sock):
+    """The extension types of the ServerHello, or None if the server answers with an alert or closes."""
+    data = b""
+    while len(data) < 5 or len(data) < 5 + struct.unpack("!H", data[3:5])[0]:
+        try:
+            chunk = sock.recv(4096)
+        except (ConnectionError, socket.timeout):
+            return None
+        if not chunk:
+            return None
+        data += chunk
+    if data[0] != 22 or data[5] != 2:                             # not a handshake record with a ServerHello
+        return None
+    p = 5 + 4 + 2 + 32
+    p += 1 + data[p]                                              # legacy_session_id_echo
+    p += 2 + 1                                                    # cipher_suite, legacy_compression_method
+    end = p + 2 + struct.unpack("!H", data[p:p + 2])[0]
+    p += 2
+    found = []
+    while p + 4 <= end:
+        kind, size = struct.unpack("!HH", data[p:p + 4])
+        found.append(kind)
+        p += 4 + size
+    return found
+
+
+PSK_POLICY = policy(("psknas", "pskclear", "localhost"))
+
+
+class PskKeyExchange(TlsTestCase):
+    """A TLS 1.3 PSK session takes an (EC)DHE exchange unless "tls psk key-exchange" says otherwise.
+
+    With psk_ke alone, the session keys come from the PSK only: whoever
+    learns the PSK later decrypts every recorded session. RFC 9257 and
+    the ANSSI TLS guide recommend psk_dhe_ke. The default accepted psk_ke
+    as well (SSL_OP_ALLOW_NO_DHE_KEX), the same as "auto".
+    """
+
+    LISTEN = {"psk": "tls = yes tls psk = yes"}
+    BODY = None
+    CLIENTS = {}
+
+    def server_extensions(self, setting=""):
+        d = self.start_daemon(PSK.replace("\ttls psk = yes\n", "\ttls psk = yes\n" + setting) + PSK_POLICY,
+                              listen=self.LISTEN)
+        with socket.create_connection((d.address, d.ports["psk"]), timeout=10.0) as s:
+            s.sendall(psk_ke_client_hello(b"psknas", bytes.fromhex(PSK_KEY)))
+            return server_hello_extensions(s)
+
+    def test_psk_ke_is_refused_by_default(self):
+        self.assertIsNone(self.server_extensions())
+
+    def test_psk_ke_is_refused_with_dhe(self):
+        self.assertIsNone(self.server_extensions("\ttls psk key-exchange = dhe\n"))
+
+    def test_psk_ke_with_auto(self):
+        """The ClientHello itself is right: with "auto" the server takes the PSK without a key share."""
+        found = self.server_extensions("\ttls psk key-exchange = auto\n")
+        self.assertIsNotNone(found, "no ServerHello")
+        self.assertIn(41, found, "the server did not take the PSK")
+        self.assertNotIn(51, found, "a key share in a psk_ke session")
+
+    def test_psk_dhe_ke_still_works(self):
+        """openssl s_client offers psk_dhe_ke: the default must still let it in."""
+        d = self.start_daemon(PSK + PSK_POLICY, listen=self.LISTEN)
+        sock = tls.PskSocket((d.address, d.ports["psk"]), "psknas", PSK_KEY, timeout=10.0)
+        self.assertTrue(self.connect(daemon=d, sock=sock, timeout=10.0).pap("alice", "alicepw").ok)
