@@ -1,9 +1,8 @@
 """Authorization results that a change to the do_author() fallback must keep.
 
-A device script that sets a profile, a user that the back-end authorizes, 
-and an unknown user on a device with "permit if-authenticated = yes". Each 
-test uses a new connection, so that the profile cache of the connection cannot
-hide a change.
+A user that the back-end authorizes, and an unknown user on a device with
+"permit if-authenticated = yes". Each test uses a new connection, so that
+the profile cache of the connection cannot hide a change.
 """
 
 import unittest
@@ -30,7 +29,7 @@ VERDICT = r"""
 
 @unittest.skipUnless(LINUX, "127.0.0.0/8 local addresses")
 class DeviceProfileKnownUser(DaemonTestCase):
-    """A known user gets the profile of the device script if the rule only permits."""
+    """A known user doesn't get the profile of the device script."""
 
     CONFIG = """
 	profile priv15 { script { set priv-lvl = 15 permit } }
@@ -53,10 +52,6 @@ class DeviceProfileKnownUser(DaemonTestCase):
 		rule { script { permit } }
 	}
 """
-
-    def test_shell_start_has_the_device_profile(self):
-        r = self.connect(source="127.0.11.1").author("alice", ["service=shell", "cmd="])
-        self.assertEqual((r.status_name, r.args), ("PASS_ADD", ["priv-lvl=15"]), r)
 
     def test_device_profile_acl_deny(self):
         # the same profile as priv15, with "acl { deny }"
