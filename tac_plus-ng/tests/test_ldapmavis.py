@@ -1107,10 +1107,10 @@ class LdapMt(LdapTests, DaemonTestCase):
                 module = (f'\tmavis module = external-mt {{\n\t\tsetenv LDAP_HOSTS = "{peer.url}"\n'
                           f'\t\tsetenv LDAP_BASE = "{BASE}"\n\t\tsetenv LDAP_USER = "{READER}"\n'
                           f'\t\tsetenv LDAP_PASSWD = "readerpw"\n{env}\t\texec = "{LDAPMAVIS}" "ldapmavis-mt"\n\t}}\n')
-                # no authentication fallback: after the failed first login the daemon asks the backend again
+                # no authentication fallback: the backend error is an ERROR, and the next login asks the backend again
                 d = self.start_daemon(module + "\tuser backend = mavis\n\tpap backend = mavis\n"
                                                "\truleset { rule everyone { script { permit } } }\n")
-                self.assertEqual(self.login(d), "FAIL")
+                self.assertEqual(self.login(d), "ERROR")
                 peer.down = False
                 self.assertEqual(self.login(d), status)
 
